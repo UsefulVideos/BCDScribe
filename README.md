@@ -9,7 +9,7 @@ BCDScribe is a Linux desktop application for inspecting and editing offline Wind
 - Edit supported Boolean, policy, reference, device, and timeout values.
 - Create, copy, and delete boot objects and BCD elements.
 - Save edits to a separate file or overwrite the open BCD store after confirmation.
-- Build a standalone x86_64 AppImage with bundled Qt and runtime libraries.
+- Build a standalone x86_64 AppImage with bundled Qt, X11, and native Wayland support.
 
 BCDScribe edits offline store files. It does not run Windows `bcdedit.exe` or directly modify the active Windows boot configuration.
 
@@ -39,4 +39,4 @@ cmake --build build
 ./build-appimage.sh
 ```
 
-The output is `dist/BCDScribe-x86_64.AppImage`. See [packaging/README.md](packaging/README.md) for tool configuration and compatibility notes. AppImages do not bundle the Linux kernel or glibc; building on an older Linux baseline improves compatibility with older distributions.
+The output is `dist/BCDScribe-x86_64.AppImage`. The AppImage bundles Qt's Wayland and X11 platform plugins; it uses native Wayland where available and can use XWayland as a fallback. See [packaging/README.md](packaging/README.md) for tool configuration and compatibility notes. AppImages do not bundle the Linux kernel or glibc; building on an older Linux baseline improves compatibility with older distributions.

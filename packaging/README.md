@@ -1,6 +1,6 @@
 # AppImage packaging
 
-The default CMake build creates the application and then runs the packaging script on Linux x86_64. The script builds a Release version, installs it into a temporary AppDir, bundles Qt and its platform plugin with linuxdeploy, and writes `dist/BCDScribe-x86_64.AppImage`. A successful run replaces the previous AppImage atomically.
+The default CMake build creates the application and then runs the packaging script on Linux x86_64. The script builds a Release version, installs it into a temporary AppDir, bundles Qt's X11 and Wayland platform plugins and their runtime dependencies with linuxdeploy, and writes `dist/BCDScribe-x86_64.AppImage`. Qt selects native Wayland when the session provides it; X11/XWayland remains available. A successful run replaces the previous AppImage atomically.
 
 Fresh BCD stores use the minimal hive fixture from [libguestfs/hivex](https://github.com/libguestfs/hivex/tree/master/images/minimal), the upstream project for libhivex. The fixture is embedded in compressed form so store creation works offline.
 

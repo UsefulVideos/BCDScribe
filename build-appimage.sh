@@ -56,7 +56,8 @@ cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
 cmake --build "$BUILD_DIR" --target BCDScribe --parallel
 cmake --install "$BUILD_DIR" --prefix "$APPDIR/usr"
 
-PATH="$TOOLS_DIR:$PATH" QMAKE="$QMAKE_BIN" APPIMAGE_EXTRACT_AND_RUN=1 \
+PATH="$TOOLS_DIR:$PATH" QMAKE="$QMAKE_BIN" EXTRA_PLATFORM_PLUGINS=libqwayland.so \
+    APPIMAGE_EXTRACT_AND_RUN=1 \
     "$TOOLS_DIR/linuxdeploy" --appdir "$APPDIR" --plugin qt
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
     "$APPIMAGETOOL_PATH" "$APPDIR" "$OUTPUT_TMP"
