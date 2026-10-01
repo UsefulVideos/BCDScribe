@@ -2159,7 +2159,7 @@ bool accepted = false;
 
     modified = true;
     showBootObjectValues(bootTree->currentItem(), nullptr);
-    statusLabel->setText("Unsaved changes. Use Save to write a separate BCD store.");
+    statusLabel->setText("Unsaved changes. Use Save to write or overwrite the BCD store.");
     updateActions();
 }
 
@@ -2174,18 +2174,28 @@ void MainWindow::saveBcdFileAs() {
         this, "Save BCD Store", suggested, "BCD stores and registry hives (*)");
     if (outputPath.isEmpty())
         return;
-    if (QFileInfo(outputPath).absoluteFilePath() == source.absoluteFilePath()) {
-        QMessageBox::warning(this, "Choose another file",
-                             "Save As will not overwrite the source BCD hive.");
+    const bool overwriteSource = QFileInfo(outputPath).absoluteFilePath() == source.absoluteFilePath();
+    if (overwriteSource &&
+        QMessageBox::warning(this, "Overwrite BCD store",
+                             "Replace the currently opened BCD store? This cannot be undone.",
+                             QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
+
+    QByteArray encodedOutputPath;
+    const char *destination = nullptr;
+    if (!overwriteSource) {
+        encodedOutputPath = outputPath.toUtf8();
+        destination = encodedOutputPath.constData();
     }
-    if (hivex_commit(hive, outputPath.toUtf8().constData(), 0) == -1) {
+    if (hivex_commit(hive, destination, 0) == -1) {
         QMessageBox::critical(this, "Save failed", "libhivex could not write the edited hive.");
         return;
     }
 
     modified = false;
-    statusLabel->setText(QString("Saved edited hive: %1").arg(outputPath));
+    statusLabel->setText(overwriteSource
+        ? QString("Saved changes to the source BCD store: %1").arg(outputPath)
+        : QString("Saved edited hive: %1").arg(outputPath));
     updateActions();
 }
 

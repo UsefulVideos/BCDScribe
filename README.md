@@ -8,7 +8,7 @@ BCDScribe is a Linux desktop application for inspecting and editing offline Wind
 - Create a fresh BCD store with a Boot Manager object and configurable boot-menu timeout.
 - Edit supported Boolean, policy, reference, device, and timeout values.
 - Create, copy, and delete boot objects and BCD elements.
-- Save edits to a separate output file; the source hive is not overwritten.
+- Save edits to a separate file or overwrite the open BCD store after confirmation.
 - Build a standalone x86_64 AppImage with bundled Qt and runtime libraries.
 
 BCDScribe edits offline store files. It does not run Windows `bcdedit.exe` or directly modify the active Windows boot configuration.
