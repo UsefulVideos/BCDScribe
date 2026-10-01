@@ -1040,10 +1040,24 @@ void MainWindow::showBootTreeContextMenu(const QPoint &position) {
     const bool isObject = item && item->data(0, Qt::UserRole).toULongLong() != 0;
     const QString groupName = item && item->parent() ? item->parent()->text(0)
                                                       : (item ? item->text(0) : QString());
-    QAction *createAction = nullptr;
-    if (!item || groupName == QStringLiteral("Application objects")) {
-        createAction = menu.addAction("Create Windows boot entry...");
-        createAction->setShortcut(hotkeySequence(QStringLiteral("createEntry")));
+    QMenu *createMenu = nullptr;
+    QAction *windowsLoaderAction = nullptr;
+    QAction *ntldrAction = nullptr;
+    QAction *grub4DosAction = nullptr;
+    QAction *memoryDiagnosticAction = nullptr;
+    QAction *wimRamdiskAction = nullptr;
+    QAction *vhdAction = nullptr;
+    if (!item || groupName == QStringLiteral("Application objects") ||
+        groupName == QStringLiteral("Tools objects")) {
+        createMenu = menu.addMenu("Create boot entry");
+        windowsLoaderAction = createMenu->addAction("Windows OS loader...");
+        windowsLoaderAction->setShortcut(hotkeySequence(QStringLiteral("createEntry")));
+        ntldrAction = createMenu->addAction("NTLDR (legacy Windows)...");
+        grub4DosAction = createMenu->addAction("GRUB4DOS (boot sector)...");
+        memoryDiagnosticAction = createMenu->addAction("Windows Memory Diagnostic...");
+        createMenu->addSeparator();
+        wimRamdiskAction = createMenu->addAction("Windows PE (WIM/Ramdisk) template...");
+        vhdAction = createMenu->addAction("Windows on VHD/VHDX template...");
     }
 
     QAction *setDefaultAction = nullptr;
@@ -1081,8 +1095,18 @@ void MainWindow::showBootTreeContextMenu(const QPoint &position) {
         return;
 
     QAction *chosen = menu.exec(bootTree->viewport()->mapToGlobal(position));
-    if (chosen == createAction)
+    if (chosen == windowsLoaderAction)
         createBootEntry();
+    else if (chosen == ntldrAction)
+        createBootEntry(QStringLiteral("ntldr"));
+    else if (chosen == grub4DosAction)
+        createBootEntry(QStringLiteral("grub4dos"));
+    else if (chosen == memoryDiagnosticAction)
+        createBootEntry(QStringLiteral("memorydiagnostic"));
+    else if (chosen == wimRamdiskAction)
+        createBootEntry(QStringLiteral("wimramdisk"));
+    else if (chosen == vhdAction)
+        createBootEntry(QStringLiteral("vhd"));
     else if (chosen == setDefaultAction)
         setSelectedAsDefaultEntry();
     else if (chosen == copyIdAction && item)
@@ -1217,13 +1241,52 @@ void MainWindow::showBootTableContextMenu(const QPoint &position) {
 }
 
 void MainWindow::createBootEntry() {
+    createBootEntry(QStringLiteral("windows"));
+}
+
+void MainWindow::createBootEntry(const QString &templateId) {
     if (!hive)
+        return;
+
+    struct BootEntryTemplate {
+        QString label;
+        QString description;
+        QString path;
+        QString systemRoot;
+        quint32 objectType;
+        bool copyBootManagerDevice;
+        bool needsSpecialDevice;
+    };
+    static const QHash<QString, BootEntryTemplate> templates = {
+        {QStringLiteral("windows"), {
+            QStringLiteral("Windows OS loader"), QStringLiteral("New Windows entry"),
+            QString(), QString(), 0x10200003u, false, false}},
+        {QStringLiteral("ntldr"), {
+            QStringLiteral("NTLDR legacy loader"), QStringLiteral("Earlier version of Windows"),
+            QStringLiteral("\\ntldr"), QString(), 0x10300000u, true, false}},
+        {QStringLiteral("grub4dos"), {
+            QStringLiteral("GRUB4DOS boot-sector loader"), QStringLiteral("GRUB4DOS"),
+            QStringLiteral("\\grldr"), QString(), 0x10400000u, true, false}},
+        {QStringLiteral("memorydiagnostic"), {
+            QStringLiteral("Windows Memory Diagnostic"), QStringLiteral("Windows Memory Diagnostic"),
+            QStringLiteral("\\boot\\memtest.exe"), QString(), 0x10200005u, true, false}},
+        {QStringLiteral("wimramdisk"), {
+            QStringLiteral("Windows PE (WIM/Ramdisk) template"), QStringLiteral("Windows PE (WIM/Ramdisk)"),
+            QStringLiteral("\\Windows\\System32\\Boot\\winload.efi"),
+            QStringLiteral("\\Windows"), 0x10200003u, false, true}},
+        {QStringLiteral("vhd"), {
+            QStringLiteral("Windows on VHD/VHDX template"), QStringLiteral("Windows on VHD/VHDX"),
+            QStringLiteral("\\Windows\\System32\\Boot\\winload.efi"),
+            QStringLiteral("\\Windows"), 0x10200003u, false, true}}
+    };
+    const BootEntryTemplate entryTemplate = templates.value(templateId);
+    if (entryTemplate.label.isEmpty())
         return;
 
     bool accepted = false;
     const QString description = QInputDialog::getText(
-        this, "Create Windows boot entry", "Description:", QLineEdit::Normal,
-        QStringLiteral("New Windows entry"), &accepted).trimmed();
+        this, QStringLiteral("Create %1").arg(entryTemplate.label), "Description:",
+        QLineEdit::Normal, entryTemplate.description, &accepted).trimmed();
     if (!accepted || description.isEmpty())
         return;
 
@@ -1252,9 +1315,8 @@ void MainWindow::createBootEntry() {
     }
 
     QByteArray typeData;
-    const quint32 objectType = 0x10200003u;
     for (int byteIndex = 0; byteIndex < 4; ++byteIndex)
-        typeData.append(static_cast<char>((objectType >> (byteIndex * 8)) & 0xff));
+        typeData.append(static_cast<char>((entryTemplate.objectType >> (byteIndex * 8)) & 0xff));
     QByteArray typeName = QByteArrayLiteral("Type");
     hive_set_value typeValue = {typeName.data(), hive_t_REG_DWORD,
                                 static_cast<size_t>(typeData.size()), typeData.data()};
@@ -1277,9 +1339,62 @@ void MainWindow::createBootEntry() {
         return;
     }
 
+    const auto addStringElement = [this, elements](const QString &id, const QString &text) {
+        const QByteArray elementId = id.toUtf8();
+        const hive_node_h element = hivex_node_add_child(hive, elements, elementId.constData());
+        if (!element)
+            return false;
+        QByteArray data;
+        for (const QChar character : text) {
+            const quint16 codeUnit = character.unicode();
+            data.append(static_cast<char>(codeUnit & 0xff));
+            data.append(static_cast<char>((codeUnit >> 8) & 0xff));
+        }
+        data.append('\0');
+        data.append('\0');
+        QByteArray key = QByteArrayLiteral("Element");
+        hive_set_value value = {key.data(), hive_t_REG_SZ,
+                                static_cast<size_t>(data.size()), data.data()};
+        if (hivex_node_set_value(hive, element, &value, 0) == -1) {
+            hivex_node_delete_child(hive, element);
+            return false;
+        }
+        return true;
+    };
+
+    if ((!entryTemplate.path.isEmpty() && !addStringElement(QStringLiteral("12000002"), entryTemplate.path)) ||
+        (!entryTemplate.systemRoot.isEmpty() &&
+         !addStringElement(QStringLiteral("22000002"), entryTemplate.systemRoot))) {
+        hivex_node_delete_child(hive, object);
+        QMessageBox::critical(this, "Create failed", "Could not write the boot-entry path settings.");
+        return;
+    }
+
+    bool copiedBootDevice = false;
+    if (entryTemplate.copyBootManagerDevice) {
+        const hive_node_h bootManager = findChildNode(
+            objects, QStringLiteral("{9dea862c-5cdd-4e70-acc1-f32b344d4795}"));
+        const hive_node_h bootManagerElements = bootManager
+            ? findChildNode(bootManager, QStringLiteral("Elements")) : 0;
+        const hive_node_h sourceDevice = bootManagerElements
+            ? findChildNode(bootManagerElements, QStringLiteral("11000001")) : 0;
+        HiveNodeSnapshot deviceSnapshot;
+        if (sourceDevice && captureNode(sourceDevice, deviceSnapshot))
+            copiedBootDevice = cloneNode(deviceSnapshot, elements) != 0;
+    }
+
     modified = true;
     refreshBootTree(guid);
-    statusLabel->setText("Created a new OS loader object. Add its device and path settings before using it.");
+    QString status = QStringLiteral("Created '%1'.").arg(description);
+    if (entryTemplate.needsSpecialDevice) {
+        status += QStringLiteral(" Configure its Ramdisk or VHD/VHDX device descriptor before using it.");
+    } else if (entryTemplate.copyBootManagerDevice && !copiedBootDevice) {
+        status += QStringLiteral(" Add its device before using it.");
+    } else if (!entryTemplate.copyBootManagerDevice && entryTemplate.path.isEmpty()) {
+        status += QStringLiteral(" Add its device and path before using it.");
+    }
+    status += QStringLiteral(" Unsaved changes.");
+    statusLabel->setText(status);
     updateActions();
 }
 

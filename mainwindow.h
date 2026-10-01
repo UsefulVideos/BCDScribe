@@ -66,6 +66,7 @@ private:
                           const QString &overrideName = QString());
     void refreshBootTree(const QString &selectGuid = QString());
     void createBootEntry();
+    void createBootEntry(const QString &templateId);
     void copySelectedBootEntry();
     void cutSelectedBootEntry();
     void pasteBootEntry();
