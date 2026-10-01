@@ -1,0 +1,11 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BCDScribe
+Comment=Inspect and edit Windows Boot Configuration Data stores
+Exec=BCDScribe
+Icon=BCDScribe
+Terminal=false
+Categories=System;
+StartupNotify=true

@@ -1,0 +1,11 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BCDScribe_Project
+Comment=Inspect and edit Windows Boot Configuration Data stores
+Exec=bash -c "cd /media/Backup/C_Projects/BCDScribe/ && code ."
+Icon=preferences-system
+Terminal=false
+Categories=System;
+StartupNotify=true
