@@ -2389,26 +2389,13 @@ bool accepted = false;
         newData.append('\0');
         newData.append('\0');
     } else {
-        char *rawData = hivex_value_value(hive, value, &type, &length);
-        const QByteArray bytes = rawData ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
-        free(rawData);
-
-        const QString entered = QInputDialog::getText(
-            this, "Edit raw value data", "Edit stored bytes as hexadecimal pairs (example: 01 02 FF):",
-            QLineEdit::Normal, QString::fromLatin1(bytes.toHex(' ')), &accepted);
-        if (!accepted)
-            return;
-
-        static const QRegularExpression hexBytes(
-            QStringLiteral("^(?:[0-9A-Fa-f]{2}(?:\\s+[0-9A-Fa-f]{2})*)?$"));
-        if (!hexBytes.match(entered.trimmed()).hasMatch()) {
-            QMessageBox::warning(this, "Invalid data", "Enter complete hexadecimal byte pairs separated by spaces.");
-            return;
-        }
-
-        QString compact = entered;
-        compact.remove(QRegularExpression(QStringLiteral("\\s")));
-        newData = QByteArray::fromHex(compact.toLatin1());
+        const QString windowsSetting = table->item(row, 1)
+            ? table->item(row, 1)->text() : QStringLiteral("BCD element");
+        QMessageBox::information(
+            this, "Friendly editor unavailable",
+            QStringLiteral("%1 (%2) does not have a friendly editor yet. Its stored data was left unchanged.")
+                .arg(windowsSetting, elementId));
+        return;
     }
 
     char *rawKey = hivex_value_key(hive, value);
