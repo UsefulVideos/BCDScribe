@@ -1,4 +1,6 @@
 {
     "cmake.configureOnOpen": true,
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json"
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "qtLivePreview.qt6Path": "/usr",
+    "qtLivePreview.autoReload": true
 }

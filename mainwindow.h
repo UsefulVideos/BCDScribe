@@ -52,8 +52,10 @@ private:
     struct PartitionMountLocation {
         QStringList mountPoints;
         QString devicePath;
+        QString type;
 
         QString displayText() const;
+        int matchPriority() const;
     };
 
     void setupUI();

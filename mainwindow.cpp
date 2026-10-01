@@ -619,7 +619,7 @@ void MainWindow::refreshPartitionMounts() {
         QStringLiteral("--json"),
         QStringLiteral("--fs"),
         QStringLiteral("--output"),
-        QStringLiteral("PATH,FSTYPE,UUID,PARTUUID,MOUNTPOINTS,LABEL")
+        QStringLiteral("PATH,FSTYPE,UUID,PARTUUID,MOUNTPOINTS,LABEL,TYPE")
     });
     if (!process.waitForFinished(3000) || process.exitStatus() != QProcess::NormalExit ||
         process.exitCode() != 0)
@@ -669,6 +669,7 @@ void MainWindow::refreshPartitionMounts() {
             PartitionMountLocation location;
             location.mountPoints = mountpoints;
             location.devicePath = device.value(QStringLiteral("path")).toString();
+            location.type = device.value(QStringLiteral("type")).toString();
             partitionMounts.insert(bcdGuidBytes, location);
         }
 
@@ -694,6 +695,11 @@ QString MainWindow::PartitionMountLocation::displayText() const {
     return QStringLiteral("%1 (%2)").arg(mountText, devicePath);
 }
 
+int MainWindow::PartitionMountLocation::matchPriority() const {
+    return (type.compare(QStringLiteral("part"), Qt::CaseInsensitive) == 0 ? 2 : 0) +
+        (mountPoints.isEmpty() ? 0 : 1);
+}
+
 QString MainWindow::deviceValueText(hive_value_h value) const {
     hive_type type;
     size_t length = 0;
@@ -703,14 +709,23 @@ QString MainWindow::deviceValueText(hive_value_h value) const {
 
     const QByteArray bytes(rawData, static_cast<int>(length));
     free(rawData);
+    const PartitionMountLocation *bestMatch = nullptr;
+    int bestPriority = -1;
     for (auto mount = partitionMounts.cbegin(); mount != partitionMounts.cend(); ++mount) {
-        if (!mount.key().isEmpty() && bytes.contains(mount.key()))
-            return QStringLiteral("Mount point: %1 | Linux device: %2")
-                .arg(mount->mountPoints.isEmpty()
-                         ? QStringLiteral("Not mounted")
-                         : mount->mountPoints.join(QStringLiteral(", ")),
-                     mount->devicePath);
+        if (mount.key().isEmpty() || !bytes.contains(mount.key()))
+            continue;
+        const int priority = mount->matchPriority();
+        if (priority > bestPriority) {
+            bestMatch = &mount.value();
+            bestPriority = priority;
+        }
     }
+    if (bestMatch)
+        return QStringLiteral("Mount point: %1 | Linux device: %2")
+            .arg(bestMatch->mountPoints.isEmpty()
+                     ? QStringLiteral("Not mounted")
+                     : bestMatch->mountPoints.join(QStringLiteral(", ")),
+                 bestMatch->devicePath);
 
     return QStringLiteral("No matching Linux partition (BCD device data: %1)")
         .arg(QString::fromLatin1(bytes.toHex(' ')));
@@ -1995,6 +2010,7 @@ void MainWindow::editSelectedValue() {
         }
 
         int partitionGuidOffset = -1;
+        int partitionGuidPriority = -1;
         PartitionMountLocation currentLocation;
         QStringList mountChoices;
         QHash<QString, QByteArray> guidByChoice;
@@ -2002,8 +2018,12 @@ void MainWindow::editSelectedValue() {
             if (mount.key().size() != 16)
                 continue;
             if (newData.contains(mount.key())) {
-                partitionGuidOffset = newData.indexOf(mount.key());
-                currentLocation = mount.value();
+                const int priority = mount->matchPriority();
+                if (priority > partitionGuidPriority) {
+                    partitionGuidOffset = newData.indexOf(mount.key());
+                    currentLocation = mount.value();
+                    partitionGuidPriority = priority;
+                }
             }
             if (mount->mountPoints.isEmpty())
                 continue;
