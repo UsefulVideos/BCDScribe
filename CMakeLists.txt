@@ -19,6 +19,7 @@ add_executable(BCDScribe
     main.cpp
     mainwindow.h
     mainwindow.cpp
+    resources.qrc
 )
 
 # Link Qt6 and libhivex

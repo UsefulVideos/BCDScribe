@@ -2,6 +2,8 @@
 
 The packaging script builds a Release version, installs it into a temporary AppDir, bundles Qt and its platform plugin with linuxdeploy, and creates an x86_64 AppImage with appimagetool.
 
+Fresh BCD stores use the minimal hive fixture from [libguestfs/hivex](https://github.com/libguestfs/hivex/tree/master/images/minimal), the upstream project for libhivex. The fixture is embedded in compressed form so store creation works offline.
+
 ## Setup
 
 Run the repository bootstrap script to install the build dependencies for Debian/Ubuntu, Fedora/RHEL, Arch, or openSUSE, and the x86_64 AppImage packaging tools into `~/.local/bin`:

@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFile>
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QFileSystemModel>
@@ -33,6 +34,7 @@
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTextBrowser>
+#include <QTemporaryFile>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QUuid>
@@ -115,11 +117,11 @@ void MainWindow::setupUI() {
 
     openButton = new QPushButton("Open Store...", this);
     saveButton = new QPushButton("Save", this);
-    editButton = new QPushButton("Edit Raw Data...", this);
+    createStoreButton = new QPushButton("Create BCD Store...", this);
     fileLayout->addWidget(pathComboBox);
     fileLayout->addWidget(openButton);
     fileLayout->addWidget(saveButton);
-    fileLayout->addWidget(editButton);
+    fileLayout->addWidget(createStoreButton);
     mainLayout->addLayout(fileLayout);
 
     modeTabs = new QTabWidget(this);
@@ -222,7 +224,7 @@ void MainWindow::setupUI() {
     connect(openButton, &QPushButton::clicked, this, &MainWindow::openBcdFile);
     connect(pathComboBox->lineEdit(), &QLineEdit::returnPressed, this, &MainWindow::openBcdPath);
     connect(saveButton, &QPushButton::clicked, this, &MainWindow::saveBcdFileAs);
-    connect(editButton, &QPushButton::clicked, this, &MainWindow::editSelectedValue);
+    connect(createStoreButton, &QPushButton::clicked, this, &MainWindow::createBcdStore);
     connect(bootTree, &QTreeWidget::currentItemChanged, this, &MainWindow::showBootObjectValues);
         connect(bootTree, &QTreeWidget::customContextMenuRequested,
             this, &MainWindow::showBootTreeContextMenu);
@@ -275,6 +277,98 @@ void MainWindow::openBcdPath() {
     if (!confirmDiscardChanges())
         return;
     loadBcdFile(filePath);
+}
+
+void MainWindow::createBcdStore() {
+    if (!confirmDiscardChanges())
+        return;
+
+    const QString outputPath = QFileDialog::getSaveFileName(
+        this, "Create BCD Store", QDir::home().filePath(QStringLiteral("BCD")),
+        "BCD stores and registry hives (*)");
+    if (outputPath.isEmpty())
+        return;
+    if (QFileInfo::exists(outputPath)) {
+        QMessageBox::warning(this, "File already exists",
+                             "Choose a new file name. Creating a BCD store will not overwrite an existing file.");
+        return;
+    }
+
+    QFile seedResource(QStringLiteral(":/templates/minimal-hive.qcompress.b64"));
+    if (!seedResource.open(QIODevice::ReadOnly)) {
+        QMessageBox::critical(this, "Create failed", "The embedded registry-hive template is unavailable.");
+        return;
+    }
+    const QByteArray compressedSeed = QByteArray::fromBase64(seedResource.readAll().trimmed());
+    const QByteArray seed = qUncompress(compressedSeed);
+    if (seed.isEmpty()) {
+        QMessageBox::critical(this, "Create failed", "The embedded registry-hive template is invalid.");
+        return;
+    }
+
+    QTemporaryFile temporaryHive(QDir::temp().filePath(QStringLiteral("BCDScribe-hive-XXXXXX")));
+    if (!temporaryHive.open() || temporaryHive.write(seed) != seed.size() || !temporaryHive.flush()) {
+        QMessageBox::critical(this, "Create failed", "Could not prepare the registry-hive template.");
+        return;
+    }
+    const QByteArray temporaryPath = temporaryHive.fileName().toUtf8();
+    temporaryHive.close();
+
+    hive_h *newHive = hivex_open(temporaryPath.constData(), HIVEX_OPEN_WRITE);
+    if (!newHive) {
+        QMessageBox::critical(this, "Create failed", "libhivex could not open the registry-hive template.");
+        return;
+    }
+
+    const hive_node_h root = hivex_root(newHive);
+    const hive_node_h objects = root ? hivex_node_add_child(newHive, root, "Objects") : 0;
+    const hive_node_h bootManager = objects
+        ? hivex_node_add_child(newHive, objects, "{9dea862c-5cdd-4e70-acc1-f32b344d4795}") : 0;
+    const hive_node_h description = bootManager
+        ? hivex_node_add_child(newHive, bootManager, "Description") : 0;
+    const hive_node_h elements = bootManager
+        ? hivex_node_add_child(newHive, bootManager, "Elements") : 0;
+    if (!root || !objects || !bootManager || !description || !elements) {
+        hivex_close(newHive);
+        QMessageBox::critical(this, "Create failed", "Could not initialize the BCD store structure.");
+        return;
+    }
+
+    QByteArray typeKey = QByteArrayLiteral("Type");
+    QByteArray typeData(4, '\0');
+    const quint32 bootManagerType = 0x10100002u;
+    for (int index = 0; index < 4; ++index)
+        typeData[index] = static_cast<char>((bootManagerType >> (index * 8)) & 0xff);
+    hive_set_value typeValue = {typeKey.data(), hive_t_REG_DWORD,
+                                static_cast<size_t>(typeData.size()), typeData.data()};
+
+    const hive_node_h timeoutElement = hivex_node_add_child(newHive, elements, "25000004");
+    QByteArray elementKey = QByteArrayLiteral("Element");
+    QByteArray timeoutData(8, '\0');
+    timeoutData[0] = 30;
+    hive_set_value timeoutValue = {elementKey.data(), hive_t_REG_BINARY,
+                                   static_cast<size_t>(timeoutData.size()), timeoutData.data()};
+    if (!timeoutElement || hivex_node_set_value(newHive, description, &typeValue, 0) == -1 ||
+        hivex_node_set_value(newHive, timeoutElement, &timeoutValue, 0) == -1) {
+        hivex_close(newHive);
+        QMessageBox::critical(this, "Create failed", "Could not initialize the BCD Boot Manager settings.");
+        return;
+    }
+
+    const QByteArray encodedOutputPath = QFileInfo(outputPath).absoluteFilePath().toUtf8();
+    if (hivex_commit(newHive, encodedOutputPath.constData(), 0) == -1) {
+        hivex_close(newHive);
+        QFile::remove(outputPath);
+        QMessageBox::critical(this, "Create failed", "libhivex could not write the new BCD store.");
+        return;
+    }
+    hivex_close(newHive);
+
+    if (loadBcdFile(outputPath)) {
+        statusLabel->setText(QStringLiteral("Created a new empty BCD store: %1. Add a boot entry before using it.")
+                                 .arg(outputPath));
+        updateActions();
+    }
 }
 
 bool MainWindow::loadBcdFile(const QString &filePath) {
@@ -2117,7 +2211,6 @@ void MainWindow::updateActions() {
     const int row = modeTabs->currentIndex() == 0 ? bootTable->currentRow() : -1;
     const bool hasEditableValue = row >= 0 && bootTable->item(row, 0) &&
         bootTable->item(row, 0)->data(Qt::UserRole).toULongLong() != 0;
-    editButton->setEnabled(hive && hasEditableValue);
 }
 
 static QString bcd_element_name(const QString &id, quint32 objectType) {

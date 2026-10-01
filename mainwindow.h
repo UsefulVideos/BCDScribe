@@ -26,6 +26,7 @@ public:
 private slots:
     void openBcdFile();
     void openBcdPath();
+    void createBcdStore();
     void saveBcdFileAs();
     void editSelectedValue();
     void showBootObjectValues(QTreeWidgetItem *current, QTreeWidgetItem *previous);
@@ -70,7 +71,7 @@ private:
     QComboBox *pathComboBox;
     QPushButton *openButton;
     QPushButton *saveButton;
-    QPushButton *editButton;
+    QPushButton *createStoreButton;
     QTabWidget *modeTabs;
     QTreeWidget *bootTree;
     QTableWidget *bootTable;
