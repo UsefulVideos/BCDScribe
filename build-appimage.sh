@@ -38,6 +38,13 @@ if [[ -z "$QMAKE_BIN" ]]; then
     printf 'Could not find qmake; set QMAKE to the Qt 6 qmake executable.\n' >&2
     exit 1
 fi
+QT_PLUGIN_DIR="$("$QMAKE_BIN" -query QT_INSTALL_PLUGINS)"
+WAYLAND_SHELL_PLUGIN="$QT_PLUGIN_DIR/wayland-shell-integration/libxdg-shell.so"
+if [[ ! -f "$WAYLAND_SHELL_PLUGIN" ]]; then
+    printf 'Qt Wayland xdg-shell plugin not found: %s\nInstall the Qt 6 Wayland package.\n' \
+        "$WAYLAND_SHELL_PLUGIN" >&2
+    exit 1
+fi
 
 LINUXDEPLOY_PATH="$(resolve_executable "$LINUXDEPLOY_BIN")"
 QT_PLUGIN_PATH="$(resolve_executable "$QT_PLUGIN_BIN")"
@@ -59,6 +66,9 @@ cmake --install "$BUILD_DIR" --prefix "$APPDIR/usr"
 PATH="$TOOLS_DIR:$PATH" QMAKE="$QMAKE_BIN" EXTRA_PLATFORM_PLUGINS=libqwayland.so \
     APPIMAGE_EXTRACT_AND_RUN=1 \
     "$TOOLS_DIR/linuxdeploy" --appdir "$APPDIR" --plugin qt
+WAYLAND_SHELL_DIR="$APPDIR/usr/plugins/wayland-shell-integration"
+mkdir -p "$WAYLAND_SHELL_DIR"
+cp "$WAYLAND_SHELL_PLUGIN" "$WAYLAND_SHELL_DIR/"
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
     "$APPIMAGETOOL_PATH" "$APPDIR" "$OUTPUT_TMP"
 mv -f -- "$OUTPUT_TMP" "$OUTPUT"
