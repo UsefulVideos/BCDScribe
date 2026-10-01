@@ -52,6 +52,8 @@ static QString bcd_boolean_value_text(hive_h *hive, hive_value_h value);
 static QString bcd_policy_value_text(hive_h *hive, hive_value_h value, const QString &id);
 static QString bcd_display_message_value_text(hive_h *hive, hive_value_h value);
 static QString bcd_numeric_value_text(hive_h *hive, hive_value_h value);
+static QString bcd_integer_list_value_text(hive_h *hive, hive_value_h value);
+static QString bcd_string_value_text(hive_h *hive, hive_value_h value);
 static QStringList bcd_reference_values(hive_h *hive, hive_value_h value);
 static QString bcd_reference_value_text(hive_h *hive, hive_value_h value);
 static QString value_data_text(hive_h *hive, hive_value_h value);
@@ -1714,8 +1716,8 @@ void MainWindow::showBootObjectValues(QTreeWidgetItem *current, QTreeWidgetItem 
             settingItem->setToolTip(QStringLiteral("Windows setting %1\nBCD element ID: %2")
                 .arg(setting, id));
             bootTable->setItem(row, 1, settingItem);
-            QString storedData = id.startsWith(QStringLiteral("11")) ||
-                id.startsWith(QStringLiteral("21"))
+            const int bcdValueType = id.size() >= 2 ? id.at(1).digitValue() : -1;
+            QString storedData = bcdValueType == 1
                 ? deviceValueText(*value)
                 : is_bcd_boolean_element(id)
                     ? bcd_boolean_value_text(hive, *value)
@@ -1730,18 +1732,18 @@ void MainWindow::showBootObjectValues(QTreeWidgetItem *current, QTreeWidgetItem 
                                     : QStringLiteral("250000F0"))
                     : id == QStringLiteral("15000066")
                         ? bcd_display_message_value_text(hive, *value)
+                    : bcdValueType == 2
+                        ? bcd_string_value_text(hive, *value)
+                    : bcdValueType == 3 || bcdValueType == 4
+                        ? bcd_reference_value_text(hive, *value)
+                    : bcdValueType == 5
+                        ? bcd_numeric_value_text(hive, *value)
                     : id == QStringLiteral("17000077")
                         ? bcd_numeric_value_text(hive, *value)
-                    : (id == QStringLiteral("25000004"))
-                        ? bcd_numeric_value_text(hive, *value)
-                    : (id == QStringLiteral("14000006") || id == QStringLiteral("14000008") ||
-                       id == QStringLiteral("23000003") || id == QStringLiteral("23000006") ||
-                       id == QStringLiteral("24000001") || id == QStringLiteral("24000010"))
-                        ? bcd_reference_value_text(hive, *value)
+                    : bcdValueType == 7 && id != QStringLiteral("17000077")
+                        ? bcd_integer_list_value_text(hive, *value)
                     : value_data_text(hive, *value);
-            if (id == QStringLiteral("14000006") || id == QStringLiteral("14000008") ||
-                id == QStringLiteral("23000003") || id == QStringLiteral("23000006") ||
-                id == QStringLiteral("24000001") || id == QStringLiteral("24000010")) {
+            if (bcdValueType == 3 || bcdValueType == 4) {
                 QStringList friendlyReferences;
                 for (const QString &reference : bcd_reference_values(hive, *value)) {
                     QString friendlyName = reference;
@@ -2733,7 +2735,21 @@ static QString bcd_numeric_value_text(hive_h *hive, hive_value_h value) {
     hive_type type;
     size_t length = 0;
     char *rawData = hivex_value_value(hive, value, &type, &length);
-    if (!rawData || type != hive_t_REG_BINARY || length == 0) {
+    if (!rawData || length == 0) {
+        free(rawData);
+        return QStringLiteral("Unknown numeric value");
+    }
+    if (type == hive_t_REG_DWORD) {
+        const QString result = QString::number(static_cast<quint32>(hivex_value_dword(hive, value)));
+        free(rawData);
+        return result;
+    }
+    if (type == hive_t_REG_QWORD) {
+        const QString result = QString::number(static_cast<quint64>(hivex_value_qword(hive, value)));
+        free(rawData);
+        return result;
+    }
+    if (type != hive_t_REG_BINARY) {
         free(rawData);
         return QStringLiteral("Unknown numeric value");
     }
@@ -2744,6 +2760,58 @@ static QString bcd_numeric_value_text(hive_h *hive, hive_value_h value) {
         number |= static_cast<quint64>(bytes[index]) << (index * 8);
     free(rawData);
     return QString::number(number);
+}
+
+static QString bcd_integer_list_value_text(hive_h *hive, hive_value_h value) {
+    hive_type type;
+    size_t length = 0;
+    char *rawData = hivex_value_value(hive, value, &type, &length);
+    if (!rawData || type != hive_t_REG_BINARY || length % sizeof(quint32) != 0) {
+        free(rawData);
+        return QStringLiteral("Unsupported integer-list value");
+    }
+    const auto *bytes = reinterpret_cast<const unsigned char *>(rawData);
+    QStringList numbers;
+    for (size_t offset = 0; offset < length; offset += sizeof(quint32)) {
+        const quint32 number = static_cast<quint32>(bytes[offset]) |
+            (static_cast<quint32>(bytes[offset + 1]) << 8) |
+            (static_cast<quint32>(bytes[offset + 2]) << 16) |
+            (static_cast<quint32>(bytes[offset + 3]) << 24);
+        numbers.append(QString::number(number));
+    }
+    free(rawData);
+    return numbers.isEmpty() ? QStringLiteral("Not configured")
+                             : numbers.join(QStringLiteral(", "));
+}
+
+static QString bcd_string_value_text(hive_h *hive, hive_value_h value) {
+    hive_type type;
+    size_t length = 0;
+    char *rawData = hivex_value_value(hive, value, &type, &length);
+    if (!rawData)
+        return QStringLiteral("(empty)");
+    if (type == hive_t_REG_SZ || type == hive_t_REG_EXPAND_SZ) {
+        free(rawData);
+        char *rawText = hivex_value_string(hive, value);
+        const QString text = rawText ? QString::fromUtf8(rawText) : QStringLiteral("(invalid string)");
+        free(rawText);
+        return text;
+    }
+    if (type != hive_t_REG_BINARY) {
+        free(rawData);
+        return value_data_text(hive, value);
+    }
+
+    const auto *bytes = reinterpret_cast<const unsigned char *>(rawData);
+    QString result;
+    for (size_t index = 0; index + 1 < length; index += 2) {
+        const ushort codeUnit = static_cast<ushort>(bytes[index] | (bytes[index + 1] << 8));
+        if (codeUnit == 0)
+            break;
+        result.append(QChar(codeUnit));
+    }
+    free(rawData);
+    return result.isEmpty() ? QStringLiteral("(empty string)") : result;
 }
 
 static QStringList bcd_reference_values(hive_h *hive, hive_value_h value) {
