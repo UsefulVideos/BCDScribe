@@ -56,19 +56,19 @@ if [[ "$DISTRO_FAMILY" == *debian* || "$DISTRO_FAMILY" == *ubuntu* ]] && command
     run_privileged apt-get update
     run_privileged apt-get install -y \
         build-essential cmake qt6-base-dev qt6-base-dev-tools qt6-wayland libhivex-dev \
-        pkg-config curl file patchelf squashfs-tools gh
+        pkg-config curl file patchelf squashfs-tools gh pkexec
 elif [[ "$DISTRO_FAMILY" == *fedora* || "$DISTRO_FAMILY" == *rhel* || "$DISTRO_FAMILY" == *centos* ]] && command -v dnf >/dev/null 2>&1; then
     run_privileged dnf install -y \
         gcc-c++ make cmake qt6-qtbase-devel qt6-qtwayland hivex-devel pkgconf-pkg-config \
-        curl file patchelf squashfs-tools gh
+        curl file patchelf squashfs-tools gh polkit
 elif [[ "$DISTRO_FAMILY" == *arch* ]] && command -v pacman >/dev/null 2>&1; then
     run_privileged pacman -S --needed --noconfirm \
-        base-devel cmake qt6-base qt6-wayland hivex pkgconf curl file patchelf squashfs-tools github-cli
+        base-devel cmake qt6-base qt6-wayland hivex pkgconf curl file patchelf squashfs-tools github-cli polkit
 elif [[ "$DISTRO_FAMILY" == *suse* ]] && command -v zypper >/dev/null 2>&1; then
     run_privileged zypper refresh
     run_privileged zypper install -y \
         gcc-c++ make cmake qt6-base-devel qt6-wayland-devel hivex-devel pkg-config \
-        curl file patchelf squashfs gh
+        curl file patchelf squashfs gh polkit
 else
     printf 'Unsupported distribution: %s (%s). Supported families: Debian/Ubuntu, Fedora/RHEL, Arch, and openSUSE.\n' \
         "${PRETTY_NAME:-unknown}" "${ID:-unknown}" >&2

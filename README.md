@@ -17,6 +17,8 @@ BCDScribe is a Linux desktop application for inspecting and editing offline Wind
 
 BCDScribe edits offline store files. It does not run Windows `bcdedit.exe` or directly modify the active Windows boot configuration.
 
+On Linux, BCDScribe requests administrator authorization through PolicyKit at launch. The application then runs with elevated privileges; review BCD stores carefully before saving changes.
+
 ## Install build dependencies
 
 On Debian/Ubuntu, Fedora/RHEL, Arch, and openSUSE, the bootstrap script installs native build packages and the AppImage packaging tools:

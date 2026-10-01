@@ -2738,7 +2738,7 @@ void MainWindow::saveBcdFileAs() {
 
     const QFileInfo source(hivePath);
     const QString suggested = source.absolutePath() + QDir::separator() +
-        source.fileName() + QStringLiteral(".edited");
+        QStringLiteral("BCD");
     const QString outputPath = QFileDialog::getSaveFileName(
         this, "Save BCD Store", suggested, "BCD stores and registry hives (*)");
     if (outputPath.isEmpty())
