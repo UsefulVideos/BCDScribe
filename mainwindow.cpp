@@ -12,9 +12,11 @@
 #include <QFileDialog>
 #include <QFileSystemModel>
 #include <QFont>
+#include <QFormLayout>
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QInputDialog>
+#include <QKeySequenceEdit>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -53,6 +55,37 @@ static QString bcd_numeric_value_text(hive_h *hive, hive_value_h value);
 static QStringList bcd_reference_values(hive_h *hive, hive_value_h value);
 static QString bcd_reference_value_text(hive_h *hive, hive_value_h value);
 static QString value_data_text(hive_h *hive, hive_value_h value);
+static QString bcd_catalog_option_name(const QString &id);
+
+struct HotkeySpec {
+    const char *id;
+    const char *label;
+    const char *defaultSequence;
+    const char *scope;
+};
+
+static const QVector<HotkeySpec> &hotkey_specs() {
+    static const QVector<HotkeySpec> specs = {
+        {"openStore", "Open store", "Ctrl+O", "window"},
+        {"saveStore", "Save store", "Ctrl+S", "window"},
+        {"createStore", "Create BCD store", "Ctrl+Shift+N", "window"},
+        {"createEntry", "Create boot entry", "Ctrl+N", "tree"},
+        {"copyIdentifier", "Copy boot entry identifier", "Ctrl+Shift+C", "tree"},
+        {"copyEntry", "Copy boot entry", "Ctrl+C", "tree"},
+        {"cutEntry", "Cut boot entry", "Ctrl+X", "tree"},
+        {"pasteEntry", "Paste boot entry", "Ctrl+V", "tree"},
+        {"deleteEntry", "Delete boot entry", "Delete", "tree"},
+        {"newField", "Create BCD field", "Ctrl+Shift+A", "table"},
+        {"copyField", "Copy field name", "Ctrl+Shift+F", "table"},
+        {"copyValue", "Copy field value", "Ctrl+C", "table"},
+        {"editValue", "Edit selected value", "F2", "table"},
+        {"copyElement", "Copy BCD element", "Ctrl+Shift+C", "table"},
+        {"cutElement", "Cut BCD element", "Ctrl+X", "table"},
+        {"pasteElement", "Paste BCD element", "Ctrl+V", "table"},
+        {"deleteElement", "Delete BCD element", "Shift+Delete", "table"}
+    };
+    return specs;
+}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     setupUI();
@@ -212,6 +245,22 @@ void MainWindow::setupUI() {
     referenceSplitter->setStretchFactor(1, 2);
     referenceLayout->addWidget(referenceSplitter);
     modeTabs->addTab(referencePage, "BCDScribe reference");
+    setupHotkeysTab();
+
+    auto *aboutPage = new QWidget(modeTabs);
+    auto *aboutLayout = new QVBoxLayout(aboutPage);
+    aboutLayout->setContentsMargins(0, 8, 0, 0);
+    auto *aboutText = new QTextBrowser(aboutPage);
+    aboutText->setOpenExternalLinks(true);
+    aboutText->setHtml(QStringLiteral(
+        "<h2>BCDScribe</h2>"
+        "<p>Linux desktop editor for offline Windows Boot Configuration Data stores.</p>"
+        "<p><a href=\"https://github.com/UsefulVideos/BCDScribe\">Project repository</a>"
+        " &middot; <a href=\"https://github.com/UsefulVideos/BCDScribe/releases\">Releases</a></p>"
+        "<p>BCD option aliases are cross-referenced with the "
+        "<a href=\"https://github.com/LinusGates/linusgates/blob/dev/bcdnodes.json\">bcdnodes catalogue</a>.</p>"));
+    aboutLayout->addWidget(aboutText);
+    modeTabs->addTab(aboutPage, "About");
     mainLayout->addWidget(modeTabs, 1);
 
     statusLabel = new QLabel("Open a BCD store to view boot objects and settings.", this);
@@ -258,6 +307,152 @@ void MainWindow::setupUI() {
     connect(bootTable, &QTableWidget::cellDoubleClicked, this,
             [this](int, int) { editSelectedValue(); });
     updateActions();
+    applyHotkeys(false);
+}
+
+void MainWindow::setupHotkeysTab() {
+    auto *page = new QWidget(modeTabs);
+    auto *layout = new QVBoxLayout(page);
+    auto *form = new QFormLayout();
+    QSettings settings(QStringLiteral("BCDScribe"), QStringLiteral("BCDScribe"));
+    for (const HotkeySpec &spec : hotkey_specs()) {
+        const QString id = QString::fromLatin1(spec.id);
+        const QString defaultSequence = QString::fromLatin1(spec.defaultSequence);
+        const QString sequence = settings.value(
+            QStringLiteral("hotkeys/%1").arg(id), defaultSequence).toString();
+        hotkeys.insert(id, sequence);
+        auto *editor = new QKeySequenceEdit(
+            QKeySequence::fromString(sequence, QKeySequence::PortableText), page);
+        hotkeyEditors.insert(id, editor);
+        form->addRow(QString::fromLatin1(spec.label), editor);
+    }
+    layout->addLayout(form);
+
+    auto *buttons = new QHBoxLayout();
+    auto *applyButton = new QPushButton("Apply shortcuts", page);
+    auto *resetButton = new QPushButton("Reset defaults", page);
+    buttons->addWidget(applyButton);
+    buttons->addWidget(resetButton);
+    buttons->addStretch();
+    layout->addLayout(buttons);
+    layout->addStretch();
+    modeTabs->addTab(page, "Hotkeys");
+
+    connect(applyButton, &QPushButton::clicked, this, [this]() {
+        if (applyHotkeys(true))
+            statusLabel->setText("Keyboard shortcuts saved.");
+    });
+    connect(resetButton, &QPushButton::clicked, this, [this]() {
+        for (const HotkeySpec &spec : hotkey_specs()) {
+            const QString id = QString::fromLatin1(spec.id);
+            hotkeyEditors.value(id)->setKeySequence(
+                QKeySequence::fromString(QString::fromLatin1(spec.defaultSequence),
+                                         QKeySequence::PortableText));
+        }
+        if (applyHotkeys(true))
+            statusLabel->setText("Default keyboard shortcuts restored.");
+    });
+}
+
+QKeySequence MainWindow::hotkeySequence(const QString &id) const {
+    return QKeySequence::fromString(hotkeys.value(id), QKeySequence::PortableText);
+}
+
+bool MainWindow::applyHotkeys(bool saveSettings) {
+    QHash<QString, QString> proposed;
+    QHash<QString, QString> ownerByShortcut;
+    for (const HotkeySpec &spec : hotkey_specs()) {
+        const QString id = QString::fromLatin1(spec.id);
+        const QString sequence = hotkeyEditors.value(id)->keySequence()
+            .toString(QKeySequence::PortableText);
+        if (!sequence.isEmpty()) {
+            const QString scopedSequence = QStringLiteral("%1:%2")
+                .arg(QString::fromLatin1(spec.scope), sequence);
+            if (ownerByShortcut.contains(scopedSequence)) {
+                QMessageBox::warning(this, "Shortcut already assigned",
+                                     QStringLiteral("%1 and %2 use the same shortcut in this context.")
+                                         .arg(ownerByShortcut.value(scopedSequence),
+                                              QString::fromLatin1(spec.label)));
+                return false;
+            }
+            ownerByShortcut.insert(scopedSequence, QString::fromLatin1(spec.label));
+        }
+        proposed.insert(id, sequence);
+    }
+
+    hotkeys = proposed;
+    if (saveSettings) {
+        QSettings settings(QStringLiteral("BCDScribe"), QStringLiteral("BCDScribe"));
+        for (auto sequence = hotkeys.cbegin(); sequence != hotkeys.cend(); ++sequence)
+            settings.setValue(QStringLiteral("hotkeys/%1").arg(sequence.key()), sequence.value());
+    }
+
+    qDeleteAll(hotkeyShortcuts);
+    hotkeyShortcuts.clear();
+    const auto addShortcut = [this](const QString &id, QWidget *contextWidget,
+                                    Qt::ShortcutContext context, auto callback) {
+        const QKeySequence sequence = hotkeySequence(id);
+        if (sequence.isEmpty())
+            return;
+        auto *shortcut = new QShortcut(sequence, contextWidget);
+        shortcut->setContext(context);
+        connect(shortcut, &QShortcut::activated, this, callback);
+        hotkeyShortcuts.append(shortcut);
+    };
+
+    addShortcut(QStringLiteral("openStore"), this, Qt::WindowShortcut,
+                [this]() { openBcdFile(); });
+    addShortcut(QStringLiteral("saveStore"), this, Qt::WindowShortcut,
+                [this]() { saveBcdFileAs(); });
+    addShortcut(QStringLiteral("createStore"), this, Qt::WindowShortcut,
+                [this]() { createBcdStore(); });
+    addShortcut(QStringLiteral("createEntry"), bootTree, Qt::WidgetWithChildrenShortcut,
+                [this]() { createBootEntry(); });
+    addShortcut(QStringLiteral("copyIdentifier"), bootTree, Qt::WidgetWithChildrenShortcut,
+                [this]() {
+                    if (QTreeWidgetItem *item = bootTree->currentItem())
+                        QGuiApplication::clipboard()->setText(item->data(0, Qt::UserRole + 1).toString());
+                });
+    addShortcut(QStringLiteral("copyEntry"), bootTree, Qt::WidgetWithChildrenShortcut,
+                [this]() { copySelectedBootEntry(); });
+    addShortcut(QStringLiteral("cutEntry"), bootTree, Qt::WidgetWithChildrenShortcut,
+                [this]() { cutSelectedBootEntry(); });
+    addShortcut(QStringLiteral("pasteEntry"), bootTree, Qt::WidgetWithChildrenShortcut,
+                [this]() { pasteBootEntry(); });
+    addShortcut(QStringLiteral("deleteEntry"), bootTree, Qt::WidgetWithChildrenShortcut,
+                [this]() { deleteSelectedBootEntry(); });
+    addShortcut(QStringLiteral("newField"), bootTable, Qt::WidgetWithChildrenShortcut,
+                [this]() { createNewField(); });
+    addShortcut(QStringLiteral("copyField"), bootTable, Qt::WidgetWithChildrenShortcut,
+                [this]() {
+                    const int row = bootTable->currentRow();
+                    if (row >= 0 && bootTable->item(row, 0))
+                        QGuiApplication::clipboard()->setText(bootTable->item(row, 0)->text());
+                });
+    addShortcut(QStringLiteral("copyValue"), bootTable, Qt::WidgetWithChildrenShortcut,
+                [this]() {
+                    const int row = bootTable->currentRow();
+                    if (row >= 0 && bootTable->item(row, 2))
+                        QGuiApplication::clipboard()->setText(bootTable->item(row, 2)->text());
+                });
+    addShortcut(QStringLiteral("editValue"), bootTable, Qt::WidgetWithChildrenShortcut,
+                [this]() { editSelectedValue(); });
+    addShortcut(QStringLiteral("copyElement"), bootTable, Qt::WidgetWithChildrenShortcut,
+                [this]() {
+                    const int row = bootTable->currentRow();
+                    if (row < 0 || !bootTable->item(row, 0))
+                        return;
+                    const hive_node_h element = static_cast<hive_node_h>(
+                        bootTable->item(row, 0)->data(Qt::UserRole + 1).toULongLong());
+                    hasElementClipboard = element && captureNode(element, elementClipboard);
+                });
+    addShortcut(QStringLiteral("cutElement"), bootTable, Qt::WidgetWithChildrenShortcut,
+                [this]() { cutSelectedElement(); });
+    addShortcut(QStringLiteral("pasteElement"), bootTable, Qt::WidgetWithChildrenShortcut,
+                [this]() { pasteElement(); });
+    addShortcut(QStringLiteral("deleteElement"), bootTable, Qt::WidgetWithChildrenShortcut,
+                [this]() { deleteSelectedElement(); });
+    return true;
 }
 
 void MainWindow::openBcdFile() {
@@ -471,11 +666,9 @@ void MainWindow::refreshPartitionMounts() {
                 mountpoints.append(mountsValue.toString());
             }
 
-            const QString devicePath = device.value(QStringLiteral("path")).toString();
-            const QString currentMount = mountpoints.join(QStringLiteral(", "));
-            const QString location = currentMount.isEmpty()
-                ? QStringLiteral("%1 (not mounted)").arg(devicePath)
-                : QStringLiteral("%1 (%2)").arg(currentMount, devicePath);
+            PartitionMountLocation location;
+            location.mountPoints = mountpoints;
+            location.devicePath = device.value(QStringLiteral("path")).toString();
             partitionMounts.insert(bcdGuidBytes, location);
         }
 
@@ -495,6 +688,12 @@ void MainWindow::refreshPartitionMounts() {
     }
 }
 
+QString MainWindow::PartitionMountLocation::displayText() const {
+    const QString mountText = mountPoints.isEmpty()
+        ? QStringLiteral("Not mounted") : mountPoints.join(QStringLiteral(", "));
+    return QStringLiteral("%1 (%2)").arg(mountText, devicePath);
+}
+
 QString MainWindow::deviceValueText(hive_value_h value) const {
     hive_type type;
     size_t length = 0;
@@ -506,7 +705,11 @@ QString MainWindow::deviceValueText(hive_value_h value) const {
     free(rawData);
     for (auto mount = partitionMounts.cbegin(); mount != partitionMounts.cend(); ++mount) {
         if (!mount.key().isEmpty() && bytes.contains(mount.key()))
-            return mount.value();
+            return QStringLiteral("Mount point: %1 | Linux device: %2")
+                .arg(mount->mountPoints.isEmpty()
+                         ? QStringLiteral("Not mounted")
+                         : mount->mountPoints.join(QStringLiteral(", ")),
+                     mount->devicePath);
     }
 
     return QStringLiteral("No matching Linux partition (BCD device data: %1)")
@@ -589,6 +792,19 @@ void MainWindow::populateBootObjects(hive_node_h root) {
 
     int firmwareObjectsSkipped = 0;
     QTreeWidgetItem *firstEntry = nullptr;
+    QTreeWidgetItem *defaultEntry = nullptr;
+    QString defaultGuid;
+    const hive_node_h bootManager = findChildNode(
+        objects, QStringLiteral("{9dea862c-5cdd-4e70-acc1-f32b344d4795}"));
+    const hive_node_h bootManagerElements = bootManager
+        ? findChildNode(bootManager, QStringLiteral("Elements")) : 0;
+    const hive_node_h defaultElement = bootManagerElements
+        ? findChildNode(bootManagerElements, QStringLiteral("23000003")) : 0;
+    const hive_value_h defaultValue = defaultElement
+        ? hivex_node_get_value(hive, defaultElement, "Element") : 0;
+    if (defaultValue)
+        defaultGuid = bcd_reference_values(hive, defaultValue).value(0);
+
     for (hive_node_h *object = objectNodes; *object != 0; ++object) {
         const hive_node_h objectDescription = findChildNode(*object, QStringLiteral("Description"));
         const hive_value_h objectTypeValue = objectDescription
@@ -667,6 +883,13 @@ void MainWindow::populateBootObjects(hive_node_h root) {
         item->setToolTip(0, QStringLiteral("Boot entry ID: %1").arg(guid));
         item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(*object));
         item->setData(0, Qt::UserRole + 1, guid);
+        if (!defaultGuid.isEmpty() && guid.compare(defaultGuid, Qt::CaseInsensitive) == 0) {
+            QFont defaultFont = item->font(0);
+            defaultFont.setBold(true);
+            item->setFont(0, defaultFont);
+            item->setToolTip(0, QStringLiteral("Default boot entry\nBoot entry ID: %1").arg(guid));
+            defaultEntry = item;
+        }
     }
     free(objectNodes);
 
@@ -674,7 +897,9 @@ void MainWindow::populateBootObjects(hive_node_h root) {
         QTreeWidgetItem *group = bootTree->topLevelItem(index);
         group->setExpanded(true);
     }
-    if (firstEntry)
+    if (defaultEntry)
+        bootTree->setCurrentItem(defaultEntry);
+    else if (firstEntry)
         bootTree->setCurrentItem(firstEntry);
     else if (firmwareObjectsSkipped > 0)
         statusLabel->setText("No non-firmware boot entries found. UEFI firmware entries are hidden here.");
@@ -782,8 +1007,10 @@ void MainWindow::showBootTreeContextMenu(const QPoint &position) {
     const QString groupName = item && item->parent() ? item->parent()->text(0)
                                                       : (item ? item->text(0) : QString());
     QAction *createAction = nullptr;
-    if (!item || groupName == QStringLiteral("Application objects"))
+    if (!item || groupName == QStringLiteral("Application objects")) {
         createAction = menu.addAction("Create Windows boot entry...");
+        createAction->setShortcut(hotkeySequence(QStringLiteral("createEntry")));
+    }
 
     QAction *copyIdAction = nullptr;
     QAction *copyEntryAction = nullptr;
@@ -793,10 +1020,14 @@ void MainWindow::showBootTreeContextMenu(const QPoint &position) {
         if (!menu.isEmpty())
             menu.addSeparator();
         copyIdAction = menu.addAction("Copy identifier");
+        copyIdAction->setShortcut(hotkeySequence(QStringLiteral("copyIdentifier")));
         copyEntryAction = menu.addAction("Copy entry");
+        copyEntryAction->setShortcut(hotkeySequence(QStringLiteral("copyEntry")));
         cutEntryAction = menu.addAction("Cut entry");
+        cutEntryAction->setShortcut(hotkeySequence(QStringLiteral("cutEntry")));
         menu.addSeparator();
         deleteEntryAction = menu.addAction("Delete entry...");
+        deleteEntryAction->setShortcut(hotkeySequence(QStringLiteral("deleteEntry")));
     }
 
     QAction *pasteEntryAction = nullptr;
@@ -804,6 +1035,7 @@ void MainWindow::showBootTreeContextMenu(const QPoint &position) {
         if (!menu.isEmpty())
             menu.addSeparator();
         pasteEntryAction = menu.addAction("Paste entry");
+        pasteEntryAction->setShortcut(hotkeySequence(QStringLiteral("pasteEntry")));
     }
     if (menu.isEmpty())
         return;
@@ -830,13 +1062,16 @@ void MainWindow::showBootTableContextMenu(const QPoint &position) {
 
     QMenu menu(this);
     QAction *newFieldAction = menu.addAction("New field...");
+    newFieldAction->setShortcut(hotkeySequence(QStringLiteral("newField")));
     QAction *copyFieldAction = nullptr;
     QAction *copyValueAction = nullptr;
     const bool isValueRow = index.isValid() && bootTable->item(index.row(), 0) &&
         bootTable->item(index.row(), 0)->data(Qt::UserRole).toULongLong() != 0;
     if (index.isValid()) {
         copyFieldAction = menu.addAction("Copy field name");
+        copyFieldAction->setShortcut(hotkeySequence(QStringLiteral("copyField")));
         copyValueAction = menu.addAction("Copy value");
+        copyValueAction->setShortcut(hotkeySequence(QStringLiteral("copyValue")));
     }
     QAction *editAction = nullptr;
     QAction *copyElementAction = nullptr;
@@ -846,13 +1081,18 @@ void MainWindow::showBootTableContextMenu(const QPoint &position) {
     if (isValueRow) {
         menu.addSeparator();
         editAction = menu.addAction("Edit...");
+        editAction->setShortcut(hotkeySequence(QStringLiteral("editValue")));
         copyElementAction = menu.addAction("Copy element");
+        copyElementAction->setShortcut(hotkeySequence(QStringLiteral("copyElement")));
         cutElementAction = menu.addAction("Cut element");
+        cutElementAction->setShortcut(hotkeySequence(QStringLiteral("cutElement")));
         deleteElementAction = menu.addAction("Delete element...");
+        deleteElementAction->setShortcut(hotkeySequence(QStringLiteral("deleteElement")));
     }
     if (hasElementClipboard) {
         menu.addSeparator();
         pasteElementAction = menu.addAction("Paste element");
+        pasteElementAction->setShortcut(hotkeySequence(QStringLiteral("pasteElement")));
     }
 
     QAction *chosen = menu.exec(bootTable->viewport()->mapToGlobal(position));
@@ -1755,7 +1995,7 @@ void MainWindow::editSelectedValue() {
         }
 
         int partitionGuidOffset = -1;
-        QString currentMount;
+        PartitionMountLocation currentLocation;
         QStringList mountChoices;
         QHash<QString, QByteArray> guidByChoice;
         for (auto mount = partitionMounts.cbegin(); mount != partitionMounts.cend(); ++mount) {
@@ -1763,13 +2003,14 @@ void MainWindow::editSelectedValue() {
                 continue;
             if (newData.contains(mount.key())) {
                 partitionGuidOffset = newData.indexOf(mount.key());
-                currentMount = mount.value();
+                currentLocation = mount.value();
             }
-            if (mount.value().endsWith(QStringLiteral(" (not mounted)")))
+            if (mount->mountPoints.isEmpty())
                 continue;
-            if (!guidByChoice.contains(mount.value())) {
-                mountChoices.append(mount.value());
-                guidByChoice.insert(mount.value(), mount.key());
+            const QString displayText = mount->displayText();
+            if (!guidByChoice.contains(displayText)) {
+                mountChoices.append(displayText);
+                guidByChoice.insert(displayText, mount.key());
             }
         }
 
@@ -1796,8 +2037,15 @@ bool accepted = false;
         
         auto *layout = new QVBoxLayout(&dialog);
 
-        layout->addWidget(new QLabel(QStringLiteral("Linux mountpoint for this BCD device:\nCurrent: %1")
-            .arg(currentMount), &dialog));
+        auto *currentMountLabel = new QLabel(
+            QStringLiteral("Current Linux mount point(s): %1\nLinux partition: %2")
+                .arg(currentLocation.mountPoints.isEmpty()
+                         ? QStringLiteral("Not mounted")
+                         : currentLocation.mountPoints.join(QStringLiteral(", ")),
+                     currentLocation.devicePath),
+            &dialog);
+        currentMountLabel->setWordWrap(true);
+        layout->addWidget(currentMountLabel);
 
         // Upper dropdown: Disks / SSDs
         layout->addWidget(new QLabel("Target Disk / Drive:", &dialog));
@@ -1848,7 +2096,7 @@ bool accepted = false;
 
         QString currentDisk;
         for (const QString &disk : diskChoices) {
-            if (currentMount.contains(disk)) {
+            if (currentLocation.devicePath.contains(disk)) {
                 currentDisk = disk;
                 break;
             }
@@ -1871,7 +2119,7 @@ bool accepted = false;
 
         updatePartitions(diskCombo->currentText());
         
-        int currentIndex = partitionCombo->findText(currentMount);
+        int currentIndex = partitionCombo->findText(currentLocation.displayText());
         if (currentIndex != -1) {
             partitionCombo->setCurrentIndex(currentIndex);
         } else if (partitionCombo->count() > 0) {
@@ -2274,7 +2522,10 @@ static QString bcd_element_name(const QString &id, quint32 objectType) {
     if (normalized == QStringLiteral("32000004")) return QStringLiteral("Ramdisk SDI path");
     if (normalized == QStringLiteral("46000010")) return QStringLiteral("Recovery OS");
     if (normalized == QStringLiteral("1600000B")) return QStringLiteral("Bad memory access");
-    return QStringLiteral("Other BCD setting");
+    const QString option = bcdedit_option_name(normalized, objectType);
+    return option.isEmpty()
+        ? QStringLiteral("Unknown BCD element (%1)").arg(normalized)
+        : QStringLiteral("BCD setting: %1").arg(option);
 }
 
 static bool is_bcd_boolean_element(const QString &id) {
@@ -2419,6 +2670,20 @@ static QString bcd_reference_value_text(hive_h *hive, hive_value_h value) {
                                 : references.join(QStringLiteral(", "));
 }
 
+static QString bcd_catalog_option_name(const QString &id) {
+    static const QHash<QString, QString> optionNames = []() {
+        QHash<QString, QString> names;
+        QFile catalog(QStringLiteral(":/catalog/bcd-element-options.json"));
+        if (!catalog.open(QIODevice::ReadOnly))
+            return names;
+        const QJsonObject entries = QJsonDocument::fromJson(catalog.readAll()).object();
+        for (auto entry = entries.constBegin(); entry != entries.constEnd(); ++entry)
+            names.insert(entry.key().toUpper(), entry.value().toString());
+        return names;
+    }();
+    return optionNames.value(id.toUpper());
+}
+
 static QString bcdedit_option_name(const QString &id, quint32 objectType) {
     const QString normalized = id.toUpper();
     if (normalized == QStringLiteral("11000001") || normalized == QStringLiteral("21000001"))
@@ -2470,7 +2735,7 @@ static QString bcdedit_option_name(const QString &id, quint32 objectType) {
     if (normalized == QStringLiteral("32000004")) return QStringLiteral("ramdisksdipath");
     if (normalized == QStringLiteral("46000010")) return QStringLiteral("recoveryos");
     if (normalized == QStringLiteral("1600000B")) return QStringLiteral("badmemoryaccess");
-    return QString();
+    return bcd_catalog_option_name(normalized);
 }
 
 static QString value_data_text(hive_h *hive, hive_value_h value) {

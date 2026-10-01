@@ -15,6 +15,9 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QLabel;
 class QTabWidget;
+class QKeySequence;
+class QKeySequenceEdit;
+class QShortcut;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -46,6 +49,13 @@ private:
         QVector<HiveNodeSnapshot> children;
     };
 
+    struct PartitionMountLocation {
+        QStringList mountPoints;
+        QString devicePath;
+
+        QString displayText() const;
+    };
+
     void setupUI();
     void populateBootObjects(hive_node_h root);
     bool captureNode(hive_node_h node, HiveNodeSnapshot &snapshot) const;
@@ -61,6 +71,9 @@ private:
     void pasteElement();
     void createNewField();
     void deleteSelectedElement();
+    void setupHotkeysTab();
+    bool applyHotkeys(bool saveSettings);
+    QKeySequence hotkeySequence(const QString &id) const;
     void refreshPartitionMounts();
     QString deviceValueText(hive_value_h value) const;
     hive_node_h findChildNode(hive_node_h parent, const QString &name) const;
@@ -78,7 +91,10 @@ private:
     QLabel *statusLabel;
     hive_h *hive = nullptr;
     QString hivePath;
-    QHash<QByteArray, QString> partitionMounts;
+    QHash<QByteArray, PartitionMountLocation> partitionMounts;
+    QHash<QString, QString> hotkeys;
+    QHash<QString, QKeySequenceEdit *> hotkeyEditors;
+    QVector<QShortcut *> hotkeyShortcuts;
     HiveNodeSnapshot objectClipboard;
     HiveNodeSnapshot elementClipboard;
     bool hasObjectClipboard = false;

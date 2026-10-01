@@ -2,4 +2,7 @@
   <qresource prefix="/templates">
     <file alias="minimal-hive.qcompress.b64">packaging/minimal-hive.qcompress.b64</file>
   </qresource>
+  <qresource prefix="/catalog">
+    <file alias="bcd-element-options.json">packaging/bcd-element-options.json</file>
+  </qresource>
 </RCC>
