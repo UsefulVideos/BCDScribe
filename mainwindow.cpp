@@ -3,6 +3,7 @@
 #include <QByteArray>
 #include <QComboBox>
 #include <QClipboard>
+#include <QCloseEvent>
 #include <QCompleter>
 #include <QDir>
 #include <QDialog>
@@ -101,6 +102,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 MainWindow::~MainWindow() {
     if (hive)
         hivex_close(hive);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    if (confirmDiscardChanges())
+        event->accept();
+    else
+        event->ignore();
 }
 
 void MainWindow::setupUI() {

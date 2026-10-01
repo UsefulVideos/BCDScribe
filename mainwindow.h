@@ -18,6 +18,7 @@ class QTabWidget;
 class QKeySequence;
 class QKeySequenceEdit;
 class QShortcut;
+class QCloseEvent;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -25,6 +26,9 @@ class MainWindow : public QMainWindow {
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
 
 private slots:
     void openBcdFile();
