@@ -1,6 +1,6 @@
 # AppImage packaging
 
-The packaging script builds a Release version, installs it into a temporary AppDir, bundles Qt and its platform plugin with linuxdeploy, and creates an x86_64 AppImage with appimagetool.
+The default CMake build creates the application and then runs the packaging script on Linux x86_64. The script builds a Release version, installs it into a temporary AppDir, bundles Qt and its platform plugin with linuxdeploy, and writes `dist/BCDScribe-x86_64.AppImage`. A successful run replaces the previous AppImage atomically.
 
 Fresh BCD stores use the minimal hive fixture from [libguestfs/hivex](https://github.com/libguestfs/hivex/tree/master/images/minimal), the upstream project for libhivex. The fixture is embedded in compressed form so store creation works offline.
 
@@ -16,7 +16,7 @@ Use `./install-dependencies.sh --dry-run` to preview commands, or add `--build` 
 
 The packaging tools are published at [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy/releases), [linuxdeploy-plugin-qt](https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases), and [appimagetool](https://github.com/AppImage/appimagetool/releases). The `*_BIN` environment variables can point to downloaded executables whose filenames differ from the command names above. The script prefers `qmake6`; set `QMAKE` if Qt 6 uses a different executable path.
 
-After setup, run from the repository root for each build:
+After setup, the regular CMake build creates or refreshes the AppImage. To package separately, run from the repository root:
 
 ```sh
 ./build-appimage.sh

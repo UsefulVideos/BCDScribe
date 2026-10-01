@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-appimage}"
 OUTPUT="${OUTPUT:-$ROOT_DIR/dist/BCDScribe-x86_64.AppImage}"
+OUTPUT_TMP="${OUTPUT}.tmp.$$"
 LINUXDEPLOY_BIN="${LINUXDEPLOY_BIN:-linuxdeploy}"
 QT_PLUGIN_BIN="${QT_PLUGIN_BIN:-linuxdeploy-plugin-qt}"
 APPIMAGETOOL_BIN="${APPIMAGETOOL_BIN:-appimagetool}"
@@ -43,25 +44,22 @@ QT_PLUGIN_PATH="$(resolve_executable "$QT_PLUGIN_BIN")"
 APPIMAGETOOL_PATH="$(resolve_executable "$APPIMAGETOOL_BIN")"
 TOOLS_DIR="$(mktemp -d)"
 APPDIR="$(mktemp -d)"
-trap 'rm -rf "$TOOLS_DIR" "$APPDIR"' EXIT
+trap 'rm -rf "$TOOLS_DIR" "$APPDIR"; rm -f "$OUTPUT_TMP"' EXIT
 
 ln -s "$LINUXDEPLOY_PATH" "$TOOLS_DIR/linuxdeploy"
 ln -s "$QT_PLUGIN_PATH" "$TOOLS_DIR/linuxdeploy-plugin-qt"
 mkdir -p "$(dirname -- "$OUTPUT")"
-if [[ -e "$OUTPUT" ]]; then
-    printf 'Refusing to overwrite existing output: %s\n' "$OUTPUT" >&2
-    exit 1
-fi
 
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr
-cmake --build "$BUILD_DIR" --parallel
+cmake --build "$BUILD_DIR" --target BCDScribe --parallel
 cmake --install "$BUILD_DIR" --prefix "$APPDIR/usr"
 
 PATH="$TOOLS_DIR:$PATH" QMAKE="$QMAKE_BIN" APPIMAGE_EXTRACT_AND_RUN=1 \
     "$TOOLS_DIR/linuxdeploy" --appdir "$APPDIR" --plugin qt
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
-    "$APPIMAGETOOL_PATH" "$APPDIR" "$OUTPUT"
+    "$APPIMAGETOOL_PATH" "$APPDIR" "$OUTPUT_TMP"
+mv -f -- "$OUTPUT_TMP" "$OUTPUT"
 
 printf 'Created %s\n' "$OUTPUT"

@@ -35,6 +35,17 @@ install(FILES packaging/BCDScribe.svg
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
 )
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+   CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+    add_custom_target(build_appimage ALL
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/build-appimage.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        VERBATIM
+        COMMENT "Building BCDScribe AppImage"
+    )
+    add_dependencies(build_appimage BCDScribe)
+endif()
+
 if(GIT_FOUND)
     add_custom_target(git_update ALL
         COMMAND ${CMAKE_COMMAND} -E env
@@ -44,4 +55,7 @@ if(GIT_FOUND)
         COMMENT "Committing and pushing repository changes when origin is configured"
     )
     add_dependencies(git_update BCDScribe)
+    if(TARGET build_appimage)
+        add_dependencies(git_update build_appimage)
+    endif()
 endif()
