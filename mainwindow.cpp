@@ -76,6 +76,7 @@ static const QVector<HotkeySpec> &hotkey_specs() {
         {"saveStore", "Save store", "Ctrl+S", "window"},
         {"createStore", "Create BCD store", "Ctrl+Shift+N", "window"},
         {"createEntry", "Create boot entry", "Ctrl+N", "tree"},
+        {"setDefaultEntry", "Set selected entry as default", "Ctrl+Shift+D", "tree"},
         {"copyIdentifier", "Copy boot entry identifier", "Ctrl+Shift+C", "tree"},
         {"copyEntry", "Copy boot entry", "Ctrl+C", "tree"},
         {"cutEntry", "Cut boot entry", "Ctrl+X", "tree"},
@@ -424,6 +425,8 @@ bool MainWindow::applyHotkeys(bool saveSettings) {
                 [this]() { createBcdStore(); });
     addShortcut(QStringLiteral("createEntry"), bootTree, Qt::WidgetWithChildrenShortcut,
                 [this]() { createBootEntry(); });
+    addShortcut(QStringLiteral("setDefaultEntry"), bootTree, Qt::WidgetWithChildrenShortcut,
+                [this]() { setSelectedAsDefaultEntry(); });
     addShortcut(QStringLiteral("copyIdentifier"), bootTree, Qt::WidgetWithChildrenShortcut,
                 [this]() {
                     if (QTreeWidgetItem *item = bootTree->currentItem())
@@ -1043,6 +1046,12 @@ void MainWindow::showBootTreeContextMenu(const QPoint &position) {
         createAction->setShortcut(hotkeySequence(QStringLiteral("createEntry")));
     }
 
+    QAction *setDefaultAction = nullptr;
+    if (isObject && groupName == QStringLiteral("Application objects")) {
+        setDefaultAction = menu.addAction("Set as default boot entry");
+        setDefaultAction->setShortcut(hotkeySequence(QStringLiteral("setDefaultEntry")));
+    }
+
     QAction *copyIdAction = nullptr;
     QAction *copyEntryAction = nullptr;
     QAction *cutEntryAction = nullptr;
@@ -1074,6 +1083,8 @@ void MainWindow::showBootTreeContextMenu(const QPoint &position) {
     QAction *chosen = menu.exec(bootTree->viewport()->mapToGlobal(position));
     if (chosen == createAction)
         createBootEntry();
+    else if (chosen == setDefaultAction)
+        setSelectedAsDefaultEntry();
     else if (chosen == copyIdAction && item)
         QGuiApplication::clipboard()->setText(item->data(0, Qt::UserRole + 1).toString());
     else if (chosen == copyEntryAction)
@@ -1084,6 +1095,64 @@ void MainWindow::showBootTreeContextMenu(const QPoint &position) {
         deleteSelectedBootEntry();
     else if (chosen == pasteEntryAction)
         pasteBootEntry();
+}
+
+void MainWindow::setSelectedAsDefaultEntry() {
+    QTreeWidgetItem *selected = bootTree->currentItem();
+    if (!hive || !selected || !selected->parent() ||
+        selected->parent()->text(0) != QStringLiteral("Application objects"))
+        return;
+
+    const QString guid = selected->data(0, Qt::UserRole + 1).toString();
+    const QString entryName = selected->text(0);
+    if (guid.isEmpty())
+        return;
+
+    const hive_node_h objects = findChildNode(hivex_root(hive), QStringLiteral("Objects"));
+    const hive_node_h bootManager = objects
+        ? findChildNode(objects, QStringLiteral("{9dea862c-5cdd-4e70-acc1-f32b344d4795}")) : 0;
+    const hive_node_h elements = bootManager
+        ? findChildNode(bootManager, QStringLiteral("Elements")) : 0;
+    if (!bootManager || !elements) {
+        QMessageBox::warning(this, "Cannot set default entry",
+                             "This BCD store has no Windows Boot Manager object.");
+        return;
+    }
+
+    hive_node_h defaultElement = findChildNode(elements, QStringLiteral("23000003"));
+    const bool createdElement = defaultElement == 0;
+    if (createdElement)
+        defaultElement = hivex_node_add_child(hive, elements, "23000003");
+    if (!defaultElement) {
+        QMessageBox::critical(this, "Set default failed",
+                              "Could not create the Boot Manager default element.");
+        return;
+    }
+
+    QByteArray referenceData;
+    for (const QChar character : guid) {
+        const quint16 codeUnit = character.unicode();
+        referenceData.append(static_cast<char>(codeUnit & 0xff));
+        referenceData.append(static_cast<char>((codeUnit >> 8) & 0xff));
+    }
+    referenceData.append('\0');
+    referenceData.append('\0');
+    QByteArray valueName = QByteArrayLiteral("Element");
+    hive_set_value defaultValue = {valueName.data(), hive_t_REG_BINARY,
+                                   static_cast<size_t>(referenceData.size()), referenceData.data()};
+    if (hivex_node_set_value(hive, defaultElement, &defaultValue, 0) == -1) {
+        if (createdElement)
+            hivex_node_delete_child(hive, defaultElement);
+        QMessageBox::critical(this, "Set default failed",
+                              "Could not update the Boot Manager default element.");
+        return;
+    }
+
+    modified = true;
+    refreshBootTree(guid);
+    statusLabel->setText(QStringLiteral("'%1' is now the default boot entry. Unsaved changes.")
+                             .arg(entryName));
+    updateActions();
 }
 
 void MainWindow::showBootTableContextMenu(const QPoint &position) {

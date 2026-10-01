@@ -35,6 +35,7 @@ private slots:
     void showBootObjectValues(QTreeWidgetItem *current, QTreeWidgetItem *previous);
     void showBootTreeContextMenu(const QPoint &position);
     void showBootTableContextMenu(const QPoint &position);
+    void setSelectedAsDefaultEntry();
 
 private:
     struct HiveValueSnapshot {
