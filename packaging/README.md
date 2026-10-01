@@ -29,3 +29,5 @@ AppImage bundles application libraries, not the Linux kernel or glibc. To suppor
 ## Automatic Git publishing
 
 The default CMake build includes a `git_update` target. After the application builds, it stages non-ignored repository changes, commits them, and pushes the current branch to `origin`. Build outputs in `build/`, `build-appimage/`, and `dist/` are ignored. Publishing is skipped with a warning if `origin` is not configured or the checkout is detached; Git credentials and author identity must be set up for publishing. This target publishes all other staged and working-tree changes, not only CMake files.
+
+After `git_update`, a `github_release` target creates a GitHub release for a new commit and uploads the AppImage. It increments the patch component of the latest `vMAJOR.MINOR.PATCH` release, generates release notes, and skips if the current commit is already released. GitHub CLI (`gh`) must be authenticated with permission to create releases. Use `./create-release.sh --dry-run` to preview the next release without publishing.

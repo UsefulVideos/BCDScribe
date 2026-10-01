@@ -57,5 +57,13 @@ if(GIT_FOUND)
     add_dependencies(git_update BCDScribe)
     if(TARGET build_appimage)
         add_dependencies(git_update build_appimage)
+
+        add_custom_target(github_release ALL
+            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/create-release.sh
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            VERBATIM
+            COMMENT "Publishing a GitHub release when main has unreleased commits"
+        )
+        add_dependencies(github_release git_update)
     endif()
 endif()

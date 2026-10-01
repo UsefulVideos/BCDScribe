@@ -33,6 +33,8 @@ cmake --build build
 
 **Git publishing:** the default CMake build includes an automatic Git update target. When an `origin` remote is configured, it stages all non-ignored repository changes, commits them, and pushes the current branch. Review your changes before building if you do not intend to publish them. Build output directories and AppImages are ignored by Git. If no `origin` is configured, publishing is skipped.
 
+**GitHub releases:** after the AppImage is built and the commit is pushed, CMake creates a versioned GitHub release when `HEAD` is newer than the latest release. Releases start at `v0.1.0` and increment the patch version; repeat builds of an already released commit do not create duplicates. This requires GitHub CLI (`gh`) to be authenticated for the repository (`gh auth login`).
+
 ## Build an AppImage
 
 ```sh
