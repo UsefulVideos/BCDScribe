@@ -23,16 +23,20 @@ if ! git -C "$REPOSITORY_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; t
     printf 'Release skipped: not inside a Git working tree.\n' >&2
     exit 0
 fi
-if ! git -C "$REPOSITORY_DIR" remote get-url origin >/dev/null 2>&1; then
-    printf 'Release skipped: configure the origin remote first.\n' >&2
-    exit 0
-fi
 if ! command -v gh >/dev/null 2>&1; then
     printf 'Release skipped: GitHub CLI (gh) is not installed.\n' >&2
     exit 0
 fi
 if ! gh auth status --hostname github.com >/dev/null 2>&1; then
     printf 'Release skipped: authenticate GitHub CLI with `gh auth login`.\n' >&2
+    exit 0
+fi
+if (( ! DRY_RUN )) && ! "$REPOSITORY_DIR/ensure-publish-remote.sh"; then
+    printf 'Release skipped: could not prepare the GitHub source/fork remotes.\n' >&2
+    exit 0
+fi
+if ! git -C "$REPOSITORY_DIR" remote get-url origin >/dev/null 2>&1; then
+    printf 'Release skipped: configure the origin remote first.\n' >&2
     exit 0
 fi
 

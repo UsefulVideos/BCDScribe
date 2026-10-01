@@ -8,8 +8,8 @@ if ! git -C "$REPOSITORY_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; t
     exit 0
 fi
 
-if ! git -C "$REPOSITORY_DIR" remote get-url origin >/dev/null 2>&1; then
-    printf 'Git publish skipped: configure a remote named origin to enable automatic publishing.\n' >&2
+if ! "$REPOSITORY_DIR/ensure-publish-remote.sh"; then
+    printf 'Git publish skipped: could not prepare the GitHub source/fork remotes.\n' >&2
     exit 0
 fi
 
@@ -23,6 +23,14 @@ git -C "$REPOSITORY_DIR" add --all
 if git -C "$REPOSITORY_DIR" diff --cached --quiet; then
     printf 'Git publish: no repository changes to commit.\n'
     exit 0
+fi
+
+if ! git -C "$REPOSITORY_DIR" config user.name >/dev/null ||
+   ! git -C "$REPOSITORY_DIR" config user.email >/dev/null; then
+    ACCOUNT="$(gh api user --jq '.login')"
+    ACCOUNT_ID="$(gh api user --jq '.id')"
+    git -C "$REPOSITORY_DIR" config user.name "$ACCOUNT"
+    git -C "$REPOSITORY_DIR" config user.email "${ACCOUNT_ID}+${ACCOUNT}@users.noreply.github.com"
 fi
 
 git -C "$REPOSITORY_DIR" commit -m "Update repository after CMake build"

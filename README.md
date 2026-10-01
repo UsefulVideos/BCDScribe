@@ -34,7 +34,7 @@ cmake --build build
 ./build/BCDScribe
 ```
 
-**Git publishing:** the default CMake build includes an automatic Git update target. When an `origin` remote is configured, it stages all non-ignored repository changes, commits them, and pushes the current branch. Review your changes before building if you do not intend to publish them. Build output directories and AppImages are ignored by Git. If no `origin` is configured, publishing is skipped.
+**Git publishing:** the default CMake build includes an automatic Git update target. For the repository owner, commits push to `UsefulVideos/BCDScribe`. Other authenticated users get or reuse a personal fork, with the source configured as `upstream` and their fork as `origin`; their commits push to that fork. The target stages all non-ignored repository changes, so review your changes before building if you do not intend to publish them. Build output directories and AppImages are ignored by Git.
 
 **GitHub releases:** after the AppImage is built and the commit is pushed, CMake creates a versioned GitHub release when `HEAD` is newer than the latest release. Releases start at `v0.1.0` and increment the patch version; repeat builds of an already released commit do not create duplicates. This requires GitHub CLI (`gh`) to be authenticated for the repository (`gh auth login`).
 
