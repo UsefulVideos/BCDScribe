@@ -3,6 +3,21 @@ project(BCDScribe CXX)
 
 include(GNUInstallDirs)
 find_package(Git QUIET)
+find_program(GH_EXECUTABLE gh)
+
+set(BCDSCRIBE_GITHUB_REPOSITORY "UsefulVideos/BCDScribe")
+if(GH_EXECUTABLE)
+    execute_process(
+        COMMAND ${GH_EXECUTABLE} api user --jq .login
+        RESULT_VARIABLE GH_USER_RESULT
+        OUTPUT_VARIABLE GH_USER
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(GH_USER_RESULT EQUAL 0 AND GH_USER AND NOT GH_USER STREQUAL "UsefulVideos")
+        set(BCDSCRIBE_GITHUB_REPOSITORY "${GH_USER}/BCDScribe")
+    endif()
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,6 +39,9 @@ add_executable(BCDScribe
 
 # Link Qt6 and libhivex
 target_link_libraries(BCDScribe PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets hivex)
+target_compile_definitions(BCDScribe PRIVATE
+    BCDSCRIBE_GITHUB_REPOSITORY="${BCDSCRIBE_GITHUB_REPOSITORY}"
+)
 
 install(TARGETS BCDScribe
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

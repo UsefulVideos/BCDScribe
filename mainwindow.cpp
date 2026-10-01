@@ -45,6 +45,10 @@
 #include <algorithm>
 #include <climits>
 
+#ifndef BCDSCRIBE_GITHUB_REPOSITORY
+#define BCDSCRIBE_GITHUB_REPOSITORY "UsefulVideos/BCDScribe"
+#endif
+
 static QString bcd_element_name(const QString &id, quint32 objectType);
 static QString bcdedit_option_name(const QString &id, quint32 objectType);
 static bool is_bcd_boolean_element(const QString &id);
@@ -254,13 +258,23 @@ void MainWindow::setupUI() {
     aboutLayout->setContentsMargins(0, 8, 0, 0);
     auto *aboutText = new QTextBrowser(aboutPage);
     aboutText->setOpenExternalLinks(true);
+    const QString repositorySlug = QStringLiteral(BCDSCRIBE_GITHUB_REPOSITORY);
+    const QString repositoryUrl = QStringLiteral("https://github.com/%1").arg(repositorySlug);
+    const QString forkNotice = repositorySlug.compare(
+        QStringLiteral("UsefulVideos/BCDScribe"), Qt::CaseInsensitive) == 0
+        ? QString()
+        : QStringLiteral("<p>This build uses the <b>%1</b> fork of "
+                         "<a href=\"https://github.com/UsefulVideos/BCDScribe\">UsefulVideos/BCDScribe</a>. "
+                         "The Releases link below lists releases from this fork.</p>")
+              .arg(repositorySlug.toHtmlEscaped());
     aboutText->setHtml(QStringLiteral(
         "<h2>BCDScribe</h2>"
         "<p>Linux desktop editor for offline Windows Boot Configuration Data stores.</p>"
-        "<p><a href=\"https://github.com/UsefulVideos/BCDScribe\">Project repository</a>"
-        " &middot; <a href=\"https://github.com/UsefulVideos/BCDScribe/releases\">Releases</a></p>"
+        "<p><a href=\"%1\">Project repository</a>"
+        " &middot; <a href=\"%1/releases\">Releases</a></p>%2"
         "<p>BCD option aliases are cross-referenced with the "
-        "<a href=\"https://github.com/LinusGates/linusgates/blob/dev/bcdnodes.json\">bcdnodes catalogue</a>.</p>"));
+        "<a href=\"https://github.com/LinusGates/linusgates/blob/dev/bcdnodes.json\">bcdnodes catalogue</a>.</p>")
+        .arg(repositoryUrl.toHtmlEscaped(), forkNotice));
     aboutLayout->addWidget(aboutText);
     modeTabs->addTab(aboutPage, "About");
     mainLayout->addWidget(modeTabs, 1);

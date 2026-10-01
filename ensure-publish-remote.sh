@@ -54,7 +54,7 @@ if gh api "repos/$FORK_REPOSITORY" --jq '.full_name' >/dev/null 2>&1; then
 fi
 
 if (( ! FORK_EXISTS )); then
-    gh repo fork "$SOURCE_REPOSITORY" --default-branch-only
+    (cd "$REPOSITORY_DIR" && gh repo fork "$SOURCE_REPOSITORY" --default-branch-only)
     FORK_PARENT="$(gh api "repos/$FORK_REPOSITORY" --jq 'if .fork then .parent.full_name else "" end')"
     if [[ "${FORK_PARENT,,}" != "${SOURCE_REPOSITORY,,}" ]]; then
         printf 'Git publishing skipped: could not verify fork %s.\n' "$FORK_REPOSITORY" >&2

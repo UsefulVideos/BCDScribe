@@ -46,10 +46,32 @@ if [[ -z "$BRANCH" ]]; then
     exit 0
 fi
 
-REPOSITORY="$(cd "$REPOSITORY_DIR" && gh repo view --json nameWithOwner --jq '.nameWithOwner')"
+ACCOUNT="$(gh api user --jq '.login')"
+if [[ "$ACCOUNT" == "UsefulVideos" ]]; then
+    REPOSITORY="UsefulVideos/BCDScribe"
+    FORK_HAS_RELEASE=1
+else
+    REPOSITORY="${ACCOUNT}/BCDScribe"
+    FORK_PARENT="$(gh api "repos/$REPOSITORY" --jq 'if .fork then .parent.full_name else "" end' 2>/dev/null || true)"
+    if [[ "${FORK_PARENT,,}" != "usefulvideos/bcdscribe" ]]; then
+        printf 'Release skipped: %s is not a verified fork of UsefulVideos/BCDScribe.\n' \
+            "$REPOSITORY" >&2
+        exit 0
+    fi
+    FORK_HAS_RELEASE=0
+fi
+
 HEAD_COMMIT="$(git -C "$REPOSITORY_DIR" rev-parse HEAD)"
 LATEST_TAG="$(gh release list --repo "$REPOSITORY" --limit 100 --json tagName,isLatest \
     --jq '[.[] | select(.isLatest)] | first | .tagName // empty')"
+if [[ "$ACCOUNT" != "UsefulVideos" && -n "$LATEST_TAG" ]]; then
+    FORK_HAS_RELEASE=1
+fi
+
+if [[ -z "$LATEST_TAG" && "$ACCOUNT" != "UsefulVideos" ]]; then
+    LATEST_TAG="$(gh release list --repo UsefulVideos/BCDScribe --limit 100 --json tagName,isLatest \
+        --jq '[.[] | select(.isLatest)] | first | .tagName // empty')"
+fi
 
 if [[ -z "$LATEST_TAG" ]]; then
     NEXT_TAG="v0.1.0"
@@ -64,14 +86,19 @@ else
     patch="${BASH_REMATCH[3]}"
 
     if ! git -C "$REPOSITORY_DIR" rev-parse --verify --quiet "refs/tags/$LATEST_TAG" >/dev/null; then
-        git -C "$REPOSITORY_DIR" fetch --quiet origin "refs/tags/$LATEST_TAG:refs/tags/$LATEST_TAG"
+        TAG_REMOTE=origin
+        if [[ "$ACCOUNT" != "UsefulVideos" && "$FORK_HAS_RELEASE" == 0 ]]; then
+            TAG_REMOTE=upstream
+        fi
+        git -C "$REPOSITORY_DIR" fetch --quiet "$TAG_REMOTE" "refs/tags/$LATEST_TAG:refs/tags/$LATEST_TAG"
     fi
     RELEASE_COMMIT="$(git -C "$REPOSITORY_DIR" rev-parse "$LATEST_TAG^{commit}")"
-    if [[ "$HEAD_COMMIT" == "$RELEASE_COMMIT" ]]; then
+    if [[ "$HEAD_COMMIT" == "$RELEASE_COMMIT" && "$FORK_HAS_RELEASE" == 1 ]]; then
         printf 'Release skipped: HEAD is already released as %s.\n' "$LATEST_TAG"
         exit 0
     fi
-    if ! git -C "$REPOSITORY_DIR" merge-base --is-ancestor "$RELEASE_COMMIT" "$HEAD_COMMIT"; then
+    if [[ "$HEAD_COMMIT" != "$RELEASE_COMMIT" ]] &&
+       ! git -C "$REPOSITORY_DIR" merge-base --is-ancestor "$RELEASE_COMMIT" "$HEAD_COMMIT"; then
         printf 'Release skipped: HEAD does not descend from latest release %s.\n' "$LATEST_TAG" >&2
         exit 0
     fi
