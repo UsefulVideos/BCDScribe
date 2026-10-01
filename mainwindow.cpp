@@ -1799,8 +1799,12 @@ void MainWindow::editSelectedValue() {
         free(rawElementId);
     }
 
-    const bool isDeviceElement = elementId == QStringLiteral("11000001") ||
-        elementId == QStringLiteral("21000001");
+    const int bcdValueType = elementId.size() >= 2 ? elementId.at(1).digitValue() : -1;
+    const bool isDeviceElement = bcdValueType == 1;
+    const bool isObjectElement = bcdValueType == 3;
+    const bool isObjectListElement = bcdValueType == 4;
+    const bool isIntegerElement = bcdValueType == 5;
+    const bool isIntegerListElement = bcdValueType == 7;
     const bool isInheritElement = elementId == QStringLiteral("14000006");
     const bool isRecoverySequenceElement = elementId == QStringLiteral("14000008");
     const bool isBootMenuPolicyElement = elementId == QStringLiteral("25000008") ||
@@ -1838,13 +1842,15 @@ void MainWindow::editSelectedValue() {
 
         newData.append(selected == QStringLiteral("Yes") ? '\x01' : '\x00');
     } else if (isDefaultEntryElement || isResumeObjectElement || isDisplayOrderElement ||
-               isToolsDisplayOrderElement) {
-        const bool isOrder = isDisplayOrderElement || isToolsDisplayOrderElement;
+               isToolsDisplayOrderElement || isObjectElement || isObjectListElement) {
+        const bool isOrder = isObjectListElement;
         const QString groupName = isResumeObjectElement
             ? QStringLiteral("Windows resume objects")
             : isToolsDisplayOrderElement
                 ? QStringLiteral("Tools objects")
-                : QStringLiteral("Application objects");
+                : isInheritElement
+                    ? QStringLiteral("Inheritable objects")
+                    : QStringLiteral("Application objects");
         QTreeWidgetItem *group = nullptr;
         for (int index = 0; index < bootTree->topLevelItemCount(); ++index) {
             QTreeWidgetItem *candidate = bootTree->topLevelItem(index);
@@ -1858,9 +1864,25 @@ void MainWindow::editSelectedValue() {
         if (group) {
             for (int index = 0; index < group->childCount(); ++index) {
                 QTreeWidgetItem *objectItem = group->child(index);
+                if (isRecoverySequenceElement &&
+                    !objectItem->text(0).contains(QStringLiteral("recovery"), Qt::CaseInsensitive))
+                    continue;
                 const QString guid = objectItem->data(0, Qt::UserRole + 1).toString();
                 if (!guid.isEmpty())
                     entries.append(qMakePair(objectItem->text(0), guid));
+            }
+        }
+        if (entries.isEmpty() && isRecoverySequenceElement) {
+            for (int groupIndex = 0; groupIndex < bootTree->topLevelItemCount(); ++groupIndex) {
+                QTreeWidgetItem *candidateGroup = bootTree->topLevelItem(groupIndex);
+                if (candidateGroup->text(0) != QStringLiteral("Application objects"))
+                    continue;
+                for (int index = 0; index < candidateGroup->childCount(); ++index) {
+                    QTreeWidgetItem *objectItem = candidateGroup->child(index);
+                    const QString guid = objectItem->data(0, Qt::UserRole + 1).toString();
+                    if (!guid.isEmpty())
+                        entries.append(qMakePair(objectItem->text(0), guid));
+                }
             }
         }
         std::sort(entries.begin(), entries.end(), [](const auto &left, const auto &right) {
@@ -2369,13 +2391,97 @@ bool accepted = false;
         const quint64 replacement = static_cast<quint64>(selectedValue);
         for (int index = 0; index < valueBytes; ++index)
             newData[index] = static_cast<char>((replacement >> (index * 8)) & 0xff);
-    } else if (type == hive_t_REG_SZ || type == hive_t_REG_EXPAND_SZ) {
-        char *rawText = hivex_value_string(hive, value);
-        const QString originalText = rawText ? QString::fromUtf8(rawText) : QString();
-        free(rawText);
+    } else if (isIntegerElement) {
+        if (length == 0 || length > sizeof(quint64)) {
+            QMessageBox::warning(this, "Unsupported integer value",
+                                 "This BCD integer does not fit in a supported numeric editor.");
+            return;
+        }
+        char *rawData = hivex_value_value(hive, value, &type, &length);
+        newData = rawData ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
+        free(rawData);
+        quint64 currentValue = 0;
+        for (int index = 0; index < newData.size(); ++index)
+            currentValue |= static_cast<quint64>(static_cast<unsigned char>(newData.at(index)))
+                << (index * 8);
+        const QString entered = QInputDialog::getText(
+            this, QStringLiteral("Edit %1").arg(selectedItem->text()),
+            "Decimal value:", QLineEdit::Normal, QString::number(currentValue), &accepted);
+        if (!accepted)
+            return;
+        bool validNumber = false;
+        const quint64 selectedValue = entered.trimmed().toULongLong(&validNumber, 10);
+        const quint64 maximumValue = newData.size() == static_cast<int>(sizeof(quint64))
+            ? std::numeric_limits<quint64>::max()
+            : (quint64(1) << (newData.size() * 8)) - 1;
+        if (!validNumber || selectedValue > maximumValue) {
+            QMessageBox::warning(this, "Invalid integer",
+                                 "Enter a non-negative decimal value that fits this BCD field.");
+            return;
+        }
+        for (int index = 0; index < newData.size(); ++index)
+            newData[index] = static_cast<char>((selectedValue >> (index * 8)) & 0xff);
+    } else if (isIntegerListElement) {
+        char *rawData = hivex_value_value(hive, value, &type, &length);
+        newData = rawData ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
+        free(rawData);
+        if (newData.size() % static_cast<int>(sizeof(quint32)) != 0) {
+            QMessageBox::warning(this, "Unsupported integer list",
+                                 "This BCD integer list has an unsupported stored format and was left unchanged.");
+            return;
+        }
+        QStringList currentValues;
+        for (int offset = 0; offset < newData.size(); offset += 4) {
+            const quint32 number = static_cast<quint32>(static_cast<unsigned char>(newData.at(offset))) |
+                (static_cast<quint32>(static_cast<unsigned char>(newData.at(offset + 1))) << 8) |
+                (static_cast<quint32>(static_cast<unsigned char>(newData.at(offset + 2))) << 16) |
+                (static_cast<quint32>(static_cast<unsigned char>(newData.at(offset + 3))) << 24);
+            currentValues.append(QString::number(number));
+        }
+        const QString entered = QInputDialog::getText(
+            this, QStringLiteral("Edit %1").arg(selectedItem->text()),
+            "Decimal values separated by commas:", QLineEdit::Normal,
+            currentValues.join(QStringLiteral(", ")), &accepted);
+        if (!accepted)
+            return;
+        newData.clear();
+        const QStringList values = entered.trimmed().isEmpty()
+            ? QStringList() : entered.split(QLatin1Char(','), Qt::SkipEmptyParts);
+        for (const QString &valueText : values) {
+            bool validNumber = false;
+            const quint32 number = valueText.trimmed().toUInt(&validNumber, 10);
+            if (!validNumber) {
+                QMessageBox::warning(this, "Invalid integer list",
+                                     "Enter comma-separated non-negative decimal integers.");
+                return;
+            }
+            for (int index = 0; index < 4; ++index)
+                newData.append(static_cast<char>((number >> (index * 8)) & 0xff));
+        }
+    } else if (bcdValueType == 2 || type == hive_t_REG_SZ || type == hive_t_REG_EXPAND_SZ) {
+        QString originalText;
+        if (type == hive_t_REG_BINARY) {
+            char *rawData = hivex_value_value(hive, value, &type, &length);
+            const QByteArray bytes = rawData
+                ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
+            free(rawData);
+            for (int index = 0; index + 1 < bytes.size(); index += 2) {
+                const ushort codeUnit = static_cast<ushort>(
+                    static_cast<unsigned char>(bytes.at(index)) |
+                    (static_cast<unsigned char>(bytes.at(index + 1)) << 8));
+                if (codeUnit == 0)
+                    break;
+                originalText.append(QChar(codeUnit));
+            }
+        } else {
+            char *rawText = hivex_value_string(hive, value);
+            originalText = rawText ? QString::fromUtf8(rawText) : QString();
+            free(rawText);
+        }
 
         const QString entered = QInputDialog::getText(
-            this, type == hive_t_REG_EXPAND_SZ ? "Edit expandable string" : "Edit string",
+            this, type == hive_t_REG_EXPAND_SZ ? "Edit expandable string"
+                                               : QStringLiteral("Edit %1").arg(selectedItem->text()),
             type == hive_t_REG_EXPAND_SZ ? "Text (environment variables are preserved):" : "Text:",
             QLineEdit::Normal, originalText, &accepted);
         if (!accepted)
