@@ -2277,128 +2277,127 @@ void MainWindow::editSelectedValue() {
         }
         mountChoices.sort(Qt::CaseInsensitive);
 
-bool accepted = false;
     QString selectedMount;
+        {
+            QDialog dialog(this);
+            dialog.setWindowTitle(elementId == QStringLiteral("11000001")
+                ? "Choose application device" : "Choose boot device");
 
-    {
-        QDialog dialog(this);
-        dialog.setWindowTitle(elementId == QStringLiteral("11000001")
-            ? "Choose application device" : "Choose boot device");
-        
         auto *layout = new QVBoxLayout(&dialog);
 
-        auto *currentMountLabel = new QLabel(
-            QStringLiteral("Current Linux mount point(s): %1\nLinux partition: %2")
-                .arg(currentLocation.mountPoints.isEmpty()
-                         ? QStringLiteral("Not mounted")
-                         : currentLocation.mountPoints.join(QStringLiteral(", ")),
-                     currentLocation.devicePath),
-            &dialog);
-        currentMountLabel->setWordWrap(true);
-        layout->addWidget(currentMountLabel);
+            auto *currentMountLabel = new QLabel(
+                QStringLiteral("Current Linux mount point(s): %1\nLinux partition: %2")
+                    .arg(currentLocation.mountPoints.isEmpty()
+                             ? QStringLiteral("Not mounted")
+                             : currentLocation.mountPoints.join(QStringLiteral(", ")),
+                         currentLocation.devicePath),
+                &dialog);
+            currentMountLabel->setWordWrap(true);
+            layout->addWidget(currentMountLabel);
 
-        // Upper dropdown: Disks / SSDs
-        layout->addWidget(new QLabel("Target Disk / Drive:", &dialog));
-        auto *diskCombo = new QComboBox(&dialog);
-        
-        QStringList diskChoices;
-        for (const QString &choice : mountChoices) {
-            QString devPath;
-            int devIdx = choice.indexOf("/dev/");
-            if (devIdx != -1) {
-                int endDev = devIdx;
-                while (endDev < choice.length() && !choice.at(endDev).isSpace() && choice.at(endDev) != ')')
-                    endDev++;
-                devPath = choice.mid(devIdx, endDev - devIdx);
-            }
+            // Upper dropdown: Disks / SSDs
+            layout->addWidget(new QLabel("Target Disk / Drive:", &dialog));
+            auto *diskCombo = new QComboBox(&dialog);
 
-            QString disk = devPath;
-            if (!disk.isEmpty()) {
-                if (disk.contains(QRegularExpression("nvme[0-9]+n[0-9]+p[0-9]+")) || disk.contains(QRegularExpression("mmcblk[0-9]+p[0-9]+"))) {
-                    int pIdx = disk.lastIndexOf('p');
-                    if (pIdx != -1) {
-                        disk = disk.left(pIdx);
-                    }
-                } else {
-                    int idx = disk.length() - 1;
-                    while (idx >= 0 && disk.at(idx).isDigit()) {
-                        idx--;
-                    }
-                    disk = disk.left(idx + 1);
-                }
-            }
-            if (disk.isEmpty()) {
-                disk = devPath;
-            }
-
-            if (!diskChoices.contains(disk) && !disk.isEmpty()) {
-                diskChoices.append(disk);
-            }
-        }
-        if (diskChoices.isEmpty()) diskChoices.append("System Disks");
-        diskCombo->addItems(diskChoices);
-        layout->addWidget(diskCombo);
-
-        // Lower dropdown: Partitions / Mountpoints
-        layout->addWidget(new QLabel("Target Partition / Mountpoint:", &dialog));
-        auto *partitionCombo = new QComboBox(&dialog);
-        layout->addWidget(partitionCombo); // Added to layout so it positions properly under the label
-
-        QString currentDisk;
-        for (const QString &disk : diskChoices) {
-            if (currentLocation.devicePath.contains(disk)) {
-                currentDisk = disk;
-                break;
-            }
-        }
-        if (!currentDisk.isEmpty()) {
-            diskCombo->setCurrentText(currentDisk);
-        }
-
-        auto updatePartitions = [partitionCombo, mountChoices](const QString &selectedDisk) {
-            partitionCombo->clear();
+            QStringList diskChoices;
             for (const QString &choice : mountChoices) {
-                if (choice.contains(selectedDisk)) {
-                    partitionCombo->addItem(choice);
+                QString devPath;
+                int devIdx = choice.indexOf("/dev/");
+                if (devIdx != -1) {
+                    int endDev = devIdx;
+                    while (endDev < choice.length() && !choice.at(endDev).isSpace() && choice.at(endDev) != ')')
+                        endDev++;
+                    devPath = choice.mid(devIdx, endDev - devIdx);
+                }
+
+                QString disk = devPath;
+                if (!disk.isEmpty()) {
+                    if (disk.contains(QRegularExpression("nvme[0-9]+n[0-9]+p[0-9]+")) || disk.contains(QRegularExpression("mmcblk[0-9]+p[0-9]+"))) {
+                        int pIdx = disk.lastIndexOf('p');
+                        if (pIdx != -1) {
+                            disk = disk.left(pIdx);
+                        }
+                    } else {
+                        int idx = disk.length() - 1;
+                        while (idx >= 0 && disk.at(idx).isDigit()) {
+                            idx--;
+                        }
+                        disk = disk.left(idx + 1);
+                    }
+                }
+                if (disk.isEmpty()) {
+                    disk = devPath;
+                }
+
+                if (!diskChoices.contains(disk) && !disk.isEmpty()) {
+                    diskChoices.append(disk);
                 }
             }
-            if (partitionCombo->count() == 0) {
-                partitionCombo->addItems(mountChoices);
+            if (diskChoices.isEmpty()) diskChoices.append("System Disks");
+            diskCombo->addItems(diskChoices);
+            layout->addWidget(diskCombo);
+
+            // Lower dropdown: Partitions / Mountpoints
+            layout->addWidget(new QLabel("Target Partition / Mountpoint:", &dialog));
+            auto *partitionCombo = new QComboBox(&dialog);
+            layout->addWidget(partitionCombo);
+
+            QString currentDisk;
+            for (const QString &disk : diskChoices) {
+                if (currentLocation.devicePath.contains(disk)) {
+                    currentDisk = disk;
+                    break;
+                }
             }
-        };
+            if (!currentDisk.isEmpty()) {
+                diskCombo->setCurrentText(currentDisk);
+            }
 
-        updatePartitions(diskCombo->currentText());
-        
-        int currentIndex = partitionCombo->findText(currentLocation.displayText());
-        if (currentIndex != -1) {
-            partitionCombo->setCurrentIndex(currentIndex);
-        } else if (partitionCombo->count() > 0) {
-            partitionCombo->setCurrentIndex(0);
+            auto updatePartitions = [partitionCombo, mountChoices](const QString &selectedDisk) {
+                partitionCombo->clear();
+                for (const QString &choice : mountChoices) {
+                    if (choice.contains(selectedDisk)) {
+                        partitionCombo->addItem(choice);
+                    }
+                }
+                if (partitionCombo->count() == 0) {
+                    partitionCombo->addItems(mountChoices);
+                }
+            };
+
+            updatePartitions(diskCombo->currentText());
+
+            int currentIndex = partitionCombo->findText(currentLocation.displayText());
+            if (currentIndex != -1) {
+                partitionCombo->setCurrentIndex(currentIndex);
+            } else if (partitionCombo->count() > 0) {
+                partitionCombo->setCurrentIndex(0);
+            }
+
+            QObject::connect(diskCombo, &QComboBox::currentTextChanged, updatePartitions);
+
+            auto *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+            layout->addWidget(buttonBox);
+
+            QObject::connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+            QObject::connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+            accepted = false;
+            if (dialog.exec() == QDialog::Accepted) {
+                accepted = true;
+                selectedMount = partitionCombo->currentText();
+            }
         }
 
-        QObject::connect(diskCombo, &QComboBox::currentTextChanged, updatePartitions);
+        if (!accepted)
+            return;
 
-        auto *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-        layout->addWidget(buttonBox);
-
-        QObject::connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-        QObject::connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-
-        if (dialog.exec() == QDialog::Accepted) {
-            accepted = true;
-            selectedMount = partitionCombo->currentText();
+        const QByteArray newPartitionGuid = guidByChoice.value(selectedMount);
+        if (newPartitionGuid.size() != 16) {
+            QMessageBox::warning(this, "Invalid partition", "Could not resolve the selected partition identifier.");
+            return;
         }
-    }
-    
-    if (!accepted)
-        return;
-
-    const QByteArray newPartitionGuid = guidByChoice.value(selectedMount);
-    if (newPartitionGuid.size() != 16) {
-        QMessageBox::warning(this, "Invalid partition", "Could not resolve the selected partition identifier.");
-        return;
-    }
-    newData.replace(partitionGuidOffset, newPartitionGuid.size(), newPartitionGuid);
+        newData.replace(partitionGuidOffset, newPartitionGuid.size(), newPartitionGuid);
     } else if (isInheritElement || isRecoverySequenceElement) {
         char *rawData = hivex_value_value(hive, value, &type, &length);
         const QByteArray bytes = rawData ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
