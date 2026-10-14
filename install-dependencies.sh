@@ -62,7 +62,7 @@ elif [[ "$DISTRO_FAMILY" == *fedora* || "$DISTRO_FAMILY" == *rhel* || "$DISTRO_F
         gcc-c++ make cmake qt6-qtbase-devel qt6-qtwayland hivex-devel pkgconf-pkg-config \
         curl file patchelf squashfs-tools gh polkit
 elif [[ "$DISTRO_FAMILY" == *arch* ]] && command -v pacman >/dev/null 2>&1; then
-    run_privileged pacman -S --needed --noconfirm \
+    run_privileged pacman -S --needed --noconfirm --overwrite '*' \
         base-devel cmake qt6-base qt6-wayland hivex pkgconf curl file patchelf squashfs-tools github-cli polkit
 elif [[ "$DISTRO_FAMILY" == *suse* ]] && command -v zypper >/dev/null 2>&1; then
     run_privileged zypper refresh

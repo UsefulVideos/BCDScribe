@@ -65,6 +65,8 @@ cmake --install "$BUILD_DIR" --prefix "$APPDIR/usr"
 
 PATH="$TOOLS_DIR:$PATH" QMAKE="$QMAKE_BIN" EXTRA_PLATFORM_PLUGINS=libqwayland.so \
     APPIMAGE_EXTRACT_AND_RUN=1 \
+    STRIP="/usr/bin/strip" \
+    NO_STRIP=1 \
     "$TOOLS_DIR/linuxdeploy" --appdir "$APPDIR" --plugin qt
 WAYLAND_SHELL_DIR="$APPDIR/usr/plugins/wayland-shell-integration"
 mkdir -p "$WAYLAND_SHELL_DIR"

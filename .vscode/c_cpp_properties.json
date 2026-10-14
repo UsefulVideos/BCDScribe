@@ -9,17 +9,17 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "/usr/include",
-                "/usr/include/x86_64-linux-gnu/qt6",
-                "/usr/include/x86_64-linux-gnu/qt6/QtCore",
-                "/usr/include/x86_64-linux-gnu/qt6/QtGui",
-                "/usr/include/x86_64-linux-gnu/qt6/QtWidgets",
-                "/usr/lib/x86_64-linux-gnu/qt6/mkspecs/linux-g++",
-                "/usr/include/x86_64-linux-gnu/qt6/QtCore/6.10.2",
-                "/usr/include/x86_64-linux-gnu/qt6/QtCore/6.10.2/QtCore",
-                "/usr/include/x86_64-linux-gnu/qt6/QtGui/6.10.2",
-                "/usr/include/x86_64-linux-gnu/qt6/QtGui/6.10.2/QtGui",
-                "/usr/include/x86_64-linux-gnu/qt6/QtWidgets/6.10.2",
-                "/usr/include/x86_64-linux-gnu/qt6/QtWidgets/6.10.2/QtWidgets"
+                "/usr/include/qt6",
+                "/usr/include/qt6/QtCore",
+                "/usr/include/qt6/QtGui",
+                "/usr/include/qt6/QtWidgets",
+                "/usr/lib/qt6/mkspecs/linux-g++",
+                "/usr/include/qt6/QtCore/6.12.0",
+                "/usr/include/qt6/QtCore/6.12.0/QtCore",
+                "/usr/include/qt6/QtGui/6.12.0",
+                "/usr/include/qt6/QtGui/6.12.0/QtGui",
+                "/usr/include/qt6/QtWidgets/6.12.0",
+                "/usr/include/qt6/QtWidgets/6.12.0/QtWidgets"
             ],
             "defines": [
                 "QT_CORE_LIB",
