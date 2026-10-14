@@ -63,15 +63,29 @@ cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
 cmake --build "$BUILD_DIR" --target BCDScribe --parallel
 cmake --install "$BUILD_DIR" --prefix "$APPDIR/usr"
 
+# 1. Run primary Qt plugin deployment configuration step
 PATH="$TOOLS_DIR:$PATH" QMAKE="$QMAKE_BIN" EXTRA_PLATFORM_PLUGINS=libqwayland.so \
     APPIMAGE_EXTRACT_AND_RUN=1 \
     STRIP="/usr/bin/strip" \
     NO_STRIP=1 \
     QT_PLUGIN_PATH="/usr/lib/qt6/plugins" \
     "$TOOLS_DIR/linuxdeploy" --appdir "$APPDIR" --plugin qt
+
+# 2. MANUALLY INJECT ARCH LINUX QT6 PLATFORM PLUGINS TO FIX THE CRASH
+PLATFORMS_DIR="$APPDIR/usr/plugins/platforms"
+mkdir -p "$PLATFORMS_DIR"
+cp -f /usr/lib/qt6/plugins/platforms/libqxcb.so "$PLATFORMS_DIR/"
+cp -f /usr/lib/qt6/plugins/platforms/libqwayland.so "$PLATFORMS_DIR/"
+
 WAYLAND_SHELL_DIR="$APPDIR/usr/plugins/wayland-shell-integration"
 mkdir -p "$WAYLAND_SHELL_DIR"
-cp "$WAYLAND_SHELL_PLUGIN" "$WAYLAND_SHELL_DIR/"
+cp -f "$WAYLAND_SHELL_PLUGIN" "$WAYLAND_SHELL_DIR/"
+
+# 3. FORCE RESCAN TO AUTOMATICALLY RESOLVE ALL LOWER-LEVEL ENGINES/DEPENDENCIES
+PATH="$TOOLS_DIR:$PATH" APPIMAGE_EXTRACT_AND_RUN=1 \
+    "$TOOLS_DIR/linuxdeploy" --appdir "$APPDIR"
+
+# 4. Generate the final AppImage asset output container
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
     "$APPIMAGETOOL_PATH" "$APPDIR" "$OUTPUT_TMP"
 mv -f -- "$OUTPUT_TMP" "$OUTPUT"
