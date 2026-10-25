@@ -85,13 +85,13 @@ cp -f "$WAYLAND_SHELL_PLUGIN" "$WAYLAND_SHELL_DIR/"
 PATH="$TOOLS_DIR:$PATH" APPIMAGE_EXTRACT_AND_RUN=1 \
     "$TOOLS_DIR/linuxdeploy" --appdir "$APPDIR"
 
-# 4. INJECT APPRUN HOOK FOR QT PLUGINS (Native linuxdeploy hook mechanism)
+# 4. OVERWRITE THE QT HOOK DIRECTLY TO FORCE CORRECT PLUGIN PATHS
 mkdir -p "$APPDIR/apprun-hooks"
-cat << 'EOF' > "$APPDIR/apprun-hooks/qt-env.sh"
+cat << 'EOF' > "$APPDIR/apprun-hooks/linuxdeploy-plugin-qt-hook.sh"
 export QT_PLUGIN_PATH="$HERE/usr/plugins"
 export QML2_IMPORT_PATH="$HERE/usr/qml"
 EOF
-chmod +x "$APPDIR/apprun-hooks/qt-env.sh"
+chmod +x "$APPDIR/apprun-hooks/linuxdeploy-plugin-qt-hook.sh"
 
 # 5. Generate the final AppImage asset output container
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
