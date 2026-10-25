@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fix: Go up one level from packaging/ to reach the true project root
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-appimage}"
 OUTPUT="${OUTPUT:-$ROOT_DIR/dist/BCDScribe-x86_64.AppImage}"
@@ -86,18 +85,13 @@ cp -f "$WAYLAND_SHELL_PLUGIN" "$WAYLAND_SHELL_DIR/"
 PATH="$TOOLS_DIR:$PATH" APPIMAGE_EXTRACT_AND_RUN=1 \
     "$TOOLS_DIR/linuxdeploy" --appdir "$APPDIR"
 
-# 4. BULLETPROOF WRAPPER: Replace the binary with a shell script that forces QT_PLUGIN_PATH
-if [[ -f "$APPDIR/usr/bin/BCDScribe" ]]; then
-    mv "$APPDIR/usr/bin/BCDScribe" "$APPDIR/usr/bin/BCDScribe.bin"
-    cat << 'EOF' > "$APPDIR/usr/bin/BCDScribe"
-#!/usr/bin/env bash
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-export QT_PLUGIN_PATH="$SCRIPT_DIR/../plugins"
-export QML2_IMPORT_PATH="$SCRIPT_DIR/../qml"
-exec "$SCRIPT_DIR/BCDScribe.bin" "$@"
+# 4. INJECT APPRUN HOOK FOR QT PLUGINS (Native linuxdeploy hook mechanism)
+mkdir -p "$APPDIR/apprun-hooks"
+cat << 'EOF' > "$APPDIR/apprun-hooks/qt-env.sh"
+export QT_PLUGIN_PATH="$HERE/usr/plugins"
+export QML2_IMPORT_PATH="$HERE/usr/qml"
 EOF
-    chmod +x "$APPDIR/usr/bin/BCDScribe"
-fi
+chmod +x "$APPDIR/apprun-hooks/qt-env.sh"
 
 # 5. Generate the final AppImage asset output container
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
