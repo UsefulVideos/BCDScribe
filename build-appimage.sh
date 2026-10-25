@@ -85,7 +85,13 @@ cp -f "$WAYLAND_SHELL_PLUGIN" "$WAYLAND_SHELL_DIR/"
 PATH="$TOOLS_DIR:$PATH" APPIMAGE_EXTRACT_AND_RUN=1 \
     "$TOOLS_DIR/linuxdeploy" --appdir "$APPDIR"
 
-# 4. Generate the final AppImage asset output container
+# 4. BULLETPROOF FIX: Force export QT_PLUGIN_PATH and QML paths in AppRun
+APPRUN_FILE="$APPDIR/AppRun"
+if [[ -f "$APPRUN_FILE" ]]; then
+    sed -i 's|#!/bin/sh|#!/bin/sh\nexport QT_PLUGIN_PATH="$HERE/usr/plugins"\nexport QML2_IMPORT_PATH="$HERE/usr/qml"|g' "$APPRUN_FILE"
+fi
+
+# 5. Generate the final AppImage asset output container
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
     "$APPIMAGETOOL_PATH" "$APPDIR" "$OUTPUT_TMP"
 mv -f -- "$OUTPUT_TMP" "$OUTPUT"
