@@ -85,13 +85,23 @@ cp -f "$WAYLAND_SHELL_PLUGIN" "$WAYLAND_SHELL_DIR/"
 PATH="$TOOLS_DIR:$PATH" APPIMAGE_EXTRACT_AND_RUN=1 \
     "$TOOLS_DIR/linuxdeploy" --appdir "$APPDIR"
 
-# 4. OVERWRITE THE QT HOOK DIRECTLY TO FORCE CORRECT PLUGIN PATHS
-mkdir -p "$APPDIR/apprun-hooks"
-cat << 'EOF' > "$APPDIR/apprun-hooks/linuxdeploy-plugin-qt-hook.sh"
-export QT_PLUGIN_PATH="$HERE/usr/plugins"
-export QML2_IMPORT_PATH="$HERE/usr/qml"
+# 4. FINAL OVERRIDE: Ensure correct qt.conf and robust AppRun hook are written AFTER all linuxdeploy runs
+mkdir -p "$APPDIR/usr/bin"
+cat << 'EOF' > "$APPDIR/usr/bin/qt.conf"
+[Paths]
+Prefix = ../
+Plugins = plugins
 EOF
-chmod +x "$APPDIR/apprun-hooks/linuxdeploy-plugin-qt-hook.sh"
+
+mkdir -p "$APPDIR/apprun-hooks"
+cat << 'EOF' > "$APPDIR/apprun-hooks/qt-plugins.sh"
+#!/bin/sh
+if [ -n "$HERE" ]; then
+    export QT_PLUGIN_PATH="$HERE/../plugins"
+    export QML2_IMPORT_PATH="$HERE/../qml"
+fi
+EOF
+chmod +x "$APPDIR/apprun-hooks/qt-plugins.sh"
 
 # 5. Generate the final AppImage asset output container
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
