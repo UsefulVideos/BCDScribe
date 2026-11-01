@@ -6,7 +6,8 @@ BCDScribe is a Linux desktop application for inspecting and editing offline Wind
 
 - Browse BCD objects, select and highlight the configured default entry, and inspect settings with mapped BCDEdit option names.
 - Create a fresh BCD store with a Boot Manager object and configurable boot-menu timeout.
-- Create NTLDR, GRUB4DOS, Windows Memory Diagnostic, WIM/Ramdisk, and VHD/VHDX boot-entry templates.
+- Create NTLDR, GRUB4DOS, Windows Memory Diagnostic, and WIM/Ramdisk boot-entry templates.
+- Create Windows-on-VHD/VHDX entries with GPT or MBR host and guest partition descriptors.
 - Edit supported Boolean, policy, reference, device, and timeout values.
 - Resolve BCD devices to Linux mountpoints and partition paths.
 - Create, copy, and delete boot objects and BCD elements.
@@ -18,6 +19,8 @@ BCDScribe is a Linux desktop application for inspecting and editing offline Wind
 BCDScribe edits offline store files. It does not run Windows `bcdedit.exe` or directly modify the active Windows boot configuration.
 
 On Linux, BCDScribe requests administrator authorization through PolicyKit at launch. The application then runs with elevated privileges; review BCD stores carefully before saving changes.
+
+VHD/VHDX entry creation requires `qemu-nbd`, `sfdisk`, `findmnt`, and `lsblk`, plus the Linux `nbd` kernel module. The app attaches the selected image read-only to inspect its partition table and detaches it before writing the BCD store. If no `/dev/nbdN` device is available, load the module (for example, `sudo modprobe nbd`) and retry. The VHD file must be stored on a GPT/MBR partition that Windows Boot Manager can read; select the partition inside the image that contains the Windows installation.
 
 ## Install build dependencies
 

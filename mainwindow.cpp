@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "vhddevice.h"
 #include <QAbstractItemView>
 #include <QByteArray>
 #include <QComboBox>
@@ -1284,8 +1285,8 @@ void MainWindow::createBootEntry(const QString &templateId) {
             QStringLiteral("\\Windows"), 0x10200003u, false, true}},
         {QStringLiteral("vhd"), {
             QStringLiteral("Windows on VHD/VHDX template"), QStringLiteral("Windows on VHD/VHDX"),
-            QStringLiteral("\\Windows\\System32\\Boot\\winload.efi"),
-            QStringLiteral("\\Windows"), 0x10200003u, false, true}}
+            QStringLiteral("\\Windows\\System32\\winload.efi"),
+            QStringLiteral("\\Windows"), 0x10200003u, false, false}}
     };
     const BootEntryTemplate entryTemplate = templates.value(templateId);
     if (entryTemplate.label.isEmpty())
@@ -1297,6 +1298,19 @@ void MainWindow::createBootEntry(const QString &templateId) {
         QLineEdit::Normal, entryTemplate.description, &accepted).trimmed();
     if (!accepted || description.isEmpty())
         return;
+
+    QByteArray vhdDeviceDescriptor;
+    if (templateId == QStringLiteral("vhd")) {
+        QString error;
+        const VhdSetupResult result = promptForVhdDevice(
+            this, vhdDeviceDescriptor, error);
+        if (result == VhdSetupResult::Cancelled)
+            return;
+        if (result == VhdSetupResult::Failed) {
+            QMessageBox::warning(this, "Cannot create VHD/VHDX entry", error);
+            return;
+        }
+    }
 
     const hive_node_h objects = findChildNode(hivex_root(hive), QStringLiteral("Objects"));
     if (!objects) {
@@ -1376,6 +1390,35 @@ void MainWindow::createBootEntry(const QString &templateId) {
         hivex_node_delete_child(hive, object);
         QMessageBox::critical(this, "Create failed", "Could not write the boot-entry path settings.");
         return;
+    }
+
+    if (!vhdDeviceDescriptor.isEmpty()) {
+        const auto addBinaryElement = [this, elements](const QString &id,
+                                                       const QByteArray &data) {
+            const QByteArray elementId = id.toUtf8();
+            const hive_node_h element = hivex_node_add_child(
+                hive, elements, elementId.constData());
+            if (!element)
+                return false;
+            QByteArray key = QByteArrayLiteral("Element");
+            hive_set_value value = {
+                key.data(), hive_t_REG_BINARY,
+                static_cast<size_t>(data.size()),
+                const_cast<char *>(data.constData())
+            };
+            if (hivex_node_set_value(hive, element, &value, 0) == -1) {
+                hivex_node_delete_child(hive, element);
+                return false;
+            }
+            return true;
+        };
+        if (!addBinaryElement(QStringLiteral("11000001"), vhdDeviceDescriptor) ||
+            !addBinaryElement(QStringLiteral("21000001"), vhdDeviceDescriptor)) {
+            hivex_node_delete_child(hive, object);
+            QMessageBox::critical(this, "Create failed",
+                                  "Could not write the VHD/VHDX device elements.");
+            return;
+        }
     }
 
     bool copiedBootDevice = false;

@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 project(BCDScribe CXX)
 
 include(GNUInstallDirs)
+include(CTest)
 find_package(Git QUIET)
 find_program(GH_EXECUTABLE gh)
 
@@ -34,6 +35,10 @@ add_executable(BCDScribe
     main.cpp
     mainwindow.h
     mainwindow.cpp
+    bcddevice.h
+    bcddevice.cpp
+    vhddevice.h
+    vhddevice.cpp
     resources.qrc
 )
 
@@ -42,6 +47,19 @@ target_link_libraries(BCDScribe PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets hivex)
 target_compile_definitions(BCDScribe PRIVATE
     BCDSCRIBE_GITHUB_REPOSITORY="${BCDSCRIBE_GITHUB_REPOSITORY}"
 )
+
+if(BUILD_TESTING)
+    add_executable(BCDScribeDeviceDescriptorTests
+        bcddevice.h
+        bcddevice.cpp
+        tests/bcddevice_test.cpp
+    )
+    target_include_directories(BCDScribeDeviceDescriptorTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    target_link_libraries(BCDScribeDeviceDescriptorTests PRIVATE Qt6::Core)
+    add_test(NAME BCDScribeDeviceDescriptorTests COMMAND BCDScribeDeviceDescriptorTests)
+endif()
 
 install(TARGETS BCDScribe
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
