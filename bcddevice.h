@@ -14,3 +14,10 @@ bool buildBcdVhdDeviceDescriptor(const QString &windowsPath,
                                  const BcdPartitionIdentity &parentPartition,
                                  QByteArray &descriptor,
                                  QString &error);
+
+bool buildBcdRamdiskDeviceDescriptor(const QString &windowsPath,
+                                     const QString &optionsGuid,
+                                     QByteArray &descriptor,
+                                     QString &error);
+
+QByteArray buildBcdRamdiskSdiDeviceDescriptor();

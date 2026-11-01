@@ -34,6 +34,8 @@ int main(int argc, char *argv[]) {
             QStringLiteral("WAYLAND_DISPLAY"),
             QStringLiteral("XDG_RUNTIME_DIR"),
             QStringLiteral("XDG_SESSION_TYPE"),
+            QStringLiteral("XDG_CURRENT_DESKTOP"),
+            QStringLiteral("XDG_SESSION_DESKTOP"),
             QStringLiteral("XAUTHORITY"),
             QStringLiteral("QT_QPA_PLATFORM")
         };

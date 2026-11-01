@@ -19,6 +19,7 @@ class QKeySequence;
 class QKeySequenceEdit;
 class QShortcut;
 class QCloseEvent;
+class QEvent;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -29,6 +30,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private slots:
     void openBcdFile();
@@ -64,6 +66,7 @@ private:
     };
 
     void setupUI();
+    void updateThemeIndicator();
     void populateBootObjects(hive_node_h root);
     bool captureNode(hive_node_h node, HiveNodeSnapshot &snapshot) const;
     hive_node_h cloneNode(const HiveNodeSnapshot &snapshot, hive_node_h parent,
@@ -97,6 +100,7 @@ private:
     QTreeWidget *bootTree;
     QTableWidget *bootTable;
     QLabel *statusLabel;
+    QLabel *themeLabel = nullptr;
     hive_h *hive = nullptr;
     QString hivePath;
     QHash<QByteArray, PartitionMountLocation> partitionMounts;

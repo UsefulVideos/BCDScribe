@@ -1,6 +1,8 @@
 #include "mainwindow.h"
+#include "bcddevice.h"
 #include "vhddevice.h"
 #include <QAbstractItemView>
+#include <QApplication>
 #include <QByteArray>
 #include <QComboBox>
 #include <QClipboard>
@@ -9,6 +11,7 @@
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QFileDialog>
@@ -27,11 +30,14 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QMenu>
+#include <QPalette>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QSettings>
+#include <QStyle>
+#include <QStyleHints>
 #include <QShortcut>
 #include <QStringList>
 #include <QTabWidget>
@@ -46,6 +52,11 @@
 #include <QHBoxLayout>
 #include <algorithm>
 #include <climits>
+
+#ifdef Q_OS_LINUX
+#include <pwd.h>
+#include <sys/types.h>
+#endif
 
 #ifndef BCDSCRIBE_GITHUB_REPOSITORY
 #define BCDSCRIBE_GITHUB_REPOSITORY "UsefulVideos/BCDScribe"
@@ -112,6 +123,89 @@ void MainWindow::closeEvent(QCloseEvent *event) {
         event->ignore();
 }
 
+void MainWindow::changeEvent(QEvent *event) {
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::ApplicationPaletteChange ||
+        event->type() == QEvent::StyleChange) {
+        updateThemeIndicator();
+    }
+}
+
+void MainWindow::updateThemeIndicator() {
+    if (!themeLabel)
+        return;
+
+    QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").trimmed();
+    if (desktop.isEmpty())
+        desktop = qEnvironmentVariable("XDG_SESSION_DESKTOP").trimmed();
+    const QString normalizedDesktop = desktop.toLower();
+    QString desktopToolkit = QStringLiteral("desktop toolkit unknown");
+    if (normalizedDesktop.contains(QStringLiteral("kde")) ||
+        normalizedDesktop.contains(QStringLiteral("plasma")) ||
+        normalizedDesktop.contains(QStringLiteral("lxqt")) ||
+        normalizedDesktop.contains(QStringLiteral("deepin")) ||
+        normalizedDesktop.contains(QStringLiteral("ukui")) ||
+        normalizedDesktop.contains(QStringLiteral("trinity"))) {
+        desktopToolkit = QStringLiteral("Qt desktop");
+    } else if (normalizedDesktop.contains(QStringLiteral("gnome")) ||
+               normalizedDesktop.contains(QStringLiteral("xfce")) ||
+               normalizedDesktop.contains(QStringLiteral("cinnamon")) ||
+               normalizedDesktop.contains(QStringLiteral("mate")) ||
+               normalizedDesktop.contains(QStringLiteral("budgie")) ||
+               normalizedDesktop.contains(QStringLiteral("pantheon")) ||
+               normalizedDesktop.contains(QStringLiteral("lxde"))) {
+        desktopToolkit = QStringLiteral("GTK desktop");
+    }
+
+    const Qt::ColorScheme scheme = QGuiApplication::styleHints()->colorScheme();
+    const bool dark = scheme == Qt::ColorScheme::Dark ||
+        (scheme == Qt::ColorScheme::Unknown &&
+         QApplication::palette().color(QPalette::Window).lightness() < 128);
+    const QString mode = dark ? QStringLiteral("Dark") : QStringLiteral("Light");
+    const QString style = QApplication::style()->objectName();
+    const QString styleName = style.isEmpty() ? QStringLiteral("system style") : style;
+    const QString desktopName = desktop.isEmpty()
+        ? QStringLiteral("unknown desktop") : desktop;
+    QString configHome = qEnvironmentVariable("XDG_CONFIG_HOME").trimmed();
+    if (configHome.isEmpty()) {
+        QString userHome = QDir::homePath();
+#ifdef Q_OS_LINUX
+        bool uidValid = false;
+        uint configUid = qEnvironmentVariable("PKEXEC_UID").toUInt(&uidValid);
+        if (!uidValid)
+            configUid = qEnvironmentVariable("SUDO_UID").toUInt(&uidValid);
+        const passwd *sessionUser = uidValid ? getpwuid(static_cast<uid_t>(configUid)) : nullptr;
+        if (sessionUser && sessionUser->pw_dir)
+            userHome = QString::fromLocal8Bit(sessionUser->pw_dir);
+#endif
+        configHome = QDir(userHome).filePath(QStringLiteral(".config"));
+    }
+
+    QString themeName;
+    if (desktopToolkit == QStringLiteral("GTK desktop")) {
+        themeName = qEnvironmentVariable("GTK_THEME").section(QLatin1Char(':'), 0, 0).trimmed();
+        for (const QString &gtkVersion : {QStringLiteral("gtk-4.0"), QStringLiteral("gtk-3.0")}) {
+            if (!themeName.isEmpty())
+                break;
+            QSettings gtkSettings(
+                QDir(configHome).filePath(gtkVersion + QStringLiteral("/settings.ini")),
+                QSettings::IniFormat);
+            themeName = gtkSettings.value(QStringLiteral("Settings/gtk-theme-name")).toString();
+        }
+    } else if (desktopToolkit == QStringLiteral("Qt desktop")) {
+        QSettings kdeSettings(QDir(configHome).filePath(QStringLiteral("kdeglobals")),
+                              QSettings::IniFormat);
+        themeName = kdeSettings.value(QStringLiteral("General/ColorScheme")).toString();
+    }
+    if (themeName.isEmpty())
+        themeName = styleName;
+    themeLabel->setText(QStringLiteral("Qt · %1 · %2 · %3")
+        .arg(desktopToolkit, themeName, mode));
+    themeLabel->setToolTip(QStringLiteral(
+        "Application toolkit: Qt\nDesktop session: %1 (%2)\nSystem theme: %3\nQt widget style: %4\nAppearance: %5, detected from the system color scheme and palette.")
+        .arg(desktopName, desktopToolkit, themeName, styleName, mode));
+}
+
 void MainWindow::setupUI() {
     QWidget *centralWidget = new QWidget(this);
     QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
@@ -127,6 +221,12 @@ void MainWindow::setupUI() {
     heading->addWidget(titleLabel);
     heading->addStretch();
     heading->addWidget(new QLabel("Windows Boot Configuration Data", this));
+    themeLabel = new QLabel(this);
+    themeLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    heading->addWidget(themeLabel);
+    updateThemeIndicator();
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
+            this, [this](Qt::ColorScheme) { updateThemeIndicator(); });
     mainLayout->addLayout(heading);
 
     QHBoxLayout *fileLayout = new QHBoxLayout();
@@ -1264,29 +1364,28 @@ void MainWindow::createBootEntry(const QString &templateId) {
         QString systemRoot;
         quint32 objectType;
         bool copyBootManagerDevice;
-        bool needsSpecialDevice;
     };
     static const QHash<QString, BootEntryTemplate> templates = {
         {QStringLiteral("windows"), {
             QStringLiteral("Windows OS loader"), QStringLiteral("New Windows entry"),
-            QString(), QString(), 0x10200003u, false, false}},
+            QString(), QString(), 0x10200003u, false}},
         {QStringLiteral("ntldr"), {
             QStringLiteral("NTLDR legacy loader"), QStringLiteral("Earlier version of Windows"),
-            QStringLiteral("\\ntldr"), QString(), 0x10300000u, true, false}},
+            QStringLiteral("\\ntldr"), QString(), 0x10300000u, true}},
         {QStringLiteral("grub4dos"), {
             QStringLiteral("GRUB4DOS boot-sector loader"), QStringLiteral("GRUB4DOS"),
-            QStringLiteral("\\grldr"), QString(), 0x10400000u, true, false}},
+            QStringLiteral("\\grldr"), QString(), 0x10400000u, true}},
         {QStringLiteral("memorydiagnostic"), {
             QStringLiteral("Windows Memory Diagnostic"), QStringLiteral("Windows Memory Diagnostic"),
-            QStringLiteral("\\boot\\memtest.exe"), QString(), 0x10200005u, true, false}},
+            QStringLiteral("\\boot\\memtest.exe"), QString(), 0x10200005u, true}},
         {QStringLiteral("wimramdisk"), {
             QStringLiteral("Windows PE (WIM/Ramdisk) template"), QStringLiteral("Windows PE (WIM/Ramdisk)"),
             QStringLiteral("\\Windows\\System32\\Boot\\winload.efi"),
-            QStringLiteral("\\Windows"), 0x10200003u, false, true}},
+            QStringLiteral("\\Windows"), 0x10200003u, false}},
         {QStringLiteral("vhd"), {
             QStringLiteral("Windows on VHD/VHDX template"), QStringLiteral("Windows on VHD/VHDX"),
             QStringLiteral("\\Windows\\System32\\winload.efi"),
-            QStringLiteral("\\Windows"), 0x10200003u, false, false}}
+            QStringLiteral("\\Windows"), 0x10200003u, false}}
     };
     const BootEntryTemplate entryTemplate = templates.value(templateId);
     if (entryTemplate.label.isEmpty())
@@ -1300,6 +1399,11 @@ void MainWindow::createBootEntry(const QString &templateId) {
         return;
 
     QByteArray vhdDeviceDescriptor;
+    QByteArray ramdiskDeviceDescriptor;
+    QString loaderPath = entryTemplate.path;
+    QString systemRoot = entryTemplate.systemRoot;
+    QString sdiPath;
+    QString ramdiskOptionsGuid;
     if (templateId == QStringLiteral("vhd")) {
         QString error;
         const VhdSetupResult result = promptForVhdDevice(
@@ -1308,6 +1412,64 @@ void MainWindow::createBootEntry(const QString &templateId) {
             return;
         if (result == VhdSetupResult::Failed) {
             QMessageBox::warning(this, "Cannot create VHD/VHDX entry", error);
+            return;
+        }
+    } else if (templateId == QStringLiteral("wimramdisk")) {
+        QDialog dialog(this);
+        dialog.setWindowTitle(QStringLiteral("Configure Windows PE ramdisk"));
+        auto *form = new QFormLayout(&dialog);
+        auto *wimPathEdit = new QLineEdit(QStringLiteral("\\sources\\boot.wim"), &dialog);
+        auto *sdiPathEdit = new QLineEdit(QStringLiteral("\\Boot\\boot.sdi"), &dialog);
+        auto *loaderPathEdit = new QLineEdit(entryTemplate.path, &dialog);
+        auto *systemRootEdit = new QLineEdit(entryTemplate.systemRoot, &dialog);
+        wimPathEdit->setPlaceholderText(QStringLiteral("\\sources\\boot.wim"));
+        sdiPathEdit->setPlaceholderText(QStringLiteral("\\Boot\\boot.sdi"));
+        loaderPathEdit->setPlaceholderText(QStringLiteral("\\Windows\\System32\\Boot\\winload.efi"));
+        systemRootEdit->setPlaceholderText(QStringLiteral("\\Windows"));
+        form->addRow(QStringLiteral("WIM image path:"), wimPathEdit);
+        form->addRow(QStringLiteral("Ramdisk SDI path:"), sdiPathEdit);
+        form->addRow(QStringLiteral("Windows loader path:"), loaderPathEdit);
+        form->addRow(QStringLiteral("Windows directory:"), systemRootEdit);
+        auto *buttons = new QDialogButtonBox(
+            QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+        form->addRow(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+
+        const QString wimPath = wimPathEdit->text().trimmed();
+        sdiPath = sdiPathEdit->text().trimmed();
+        loaderPath = loaderPathEdit->text().trimmed();
+        systemRoot = systemRootEdit->text().trimmed();
+        const QStringList windowsPaths = {sdiPath, loaderPath, systemRoot};
+        const QString invalidCharacters = QStringLiteral("<>:\"|?*");
+        const auto validPath = [&invalidCharacters](const QString &path) {
+            if (!path.startsWith(QLatin1Char('\\')) ||
+                path.endsWith(QLatin1Char('\\')) ||
+                path.contains(QLatin1Char('/')))
+                return false;
+            for (const QChar character : path) {
+                if (character.unicode() < 0x20 || invalidCharacters.contains(character))
+                    return false;
+            }
+            return true;
+        };
+        if (!validPath(wimPath) ||
+            std::any_of(windowsPaths.cbegin(), windowsPaths.cend(),
+                        [&validPath](const QString &path) { return !validPath(path); })) {
+            QMessageBox::warning(
+                this, QStringLiteral("Invalid Windows path"),
+                QStringLiteral("Enter each WIM, SDI, loader, and Windows directory path as an absolute Windows path beginning with a backslash."));
+            return;
+        }
+
+        ramdiskOptionsGuid = QUuid::createUuid()
+            .toString(QUuid::WithoutBraces).toLower();
+        QString error;
+        if (!buildBcdRamdiskDeviceDescriptor(
+                wimPath, ramdiskOptionsGuid, ramdiskDeviceDescriptor, error)) {
+            QMessageBox::warning(this, QStringLiteral("Cannot create WIM entry"), error);
             return;
         }
     }
@@ -1326,12 +1488,30 @@ void MainWindow::createBootEntry(const QString &templateId) {
         return;
     }
 
+    hive_node_h ramdiskOptionsObject = 0;
+    if (!sdiPath.isEmpty()) {
+        const QByteArray optionsName = QStringLiteral("{%1}").arg(ramdiskOptionsGuid).toUtf8();
+        ramdiskOptionsObject = hivex_node_add_child(
+            hive, objects, optionsName.constData());
+        if (!ramdiskOptionsObject) {
+            hivex_node_delete_child(hive, object);
+            QMessageBox::critical(this, "Create failed",
+                                  "Could not create the ramdisk options object.");
+            return;
+        }
+    }
+    const auto deleteCreatedObjects = [this, object, ramdiskOptionsObject]() {
+        if (ramdiskOptionsObject)
+            hivex_node_delete_child(hive, ramdiskOptionsObject);
+        hivex_node_delete_child(hive, object);
+    };
+
     const hive_node_h objectDescription = hivex_node_add_child(hive, object, "Description");
     const hive_node_h elements = hivex_node_add_child(hive, object, "Elements");
     const hive_node_h descriptionElement = elements
         ? hivex_node_add_child(hive, elements, "12000004") : 0;
     if (!objectDescription || !elements || !descriptionElement) {
-        hivex_node_delete_child(hive, object);
+        deleteCreatedObjects();
         QMessageBox::critical(this, "Create failed", "Could not initialize the BCD object structure.");
         return;
     }
@@ -1356,14 +1536,16 @@ void MainWindow::createBootEntry(const QString &templateId) {
                                        static_cast<size_t>(textData.size()), textData.data()};
     if (hivex_node_set_value(hive, objectDescription, &typeValue, 0) == -1 ||
         hivex_node_set_value(hive, descriptionElement, &descriptionValue, 0) == -1) {
-        hivex_node_delete_child(hive, object);
+        deleteCreatedObjects();
         QMessageBox::critical(this, "Create failed", "Could not write the BCD object metadata.");
         return;
     }
 
-    const auto addStringElement = [this, elements](const QString &id, const QString &text) {
+    const auto addStringElement = [this](hive_node_h parentElements,
+                                         const QString &id, const QString &text) {
         const QByteArray elementId = id.toUtf8();
-        const hive_node_h element = hivex_node_add_child(hive, elements, elementId.constData());
+        const hive_node_h element = hivex_node_add_child(
+            hive, parentElements, elementId.constData());
         if (!element)
             return false;
         QByteArray data;
@@ -1384,39 +1566,88 @@ void MainWindow::createBootEntry(const QString &templateId) {
         return true;
     };
 
-    if ((!entryTemplate.path.isEmpty() && !addStringElement(QStringLiteral("12000002"), entryTemplate.path)) ||
-        (!entryTemplate.systemRoot.isEmpty() &&
-         !addStringElement(QStringLiteral("22000002"), entryTemplate.systemRoot))) {
-        hivex_node_delete_child(hive, object);
+    const auto addBinaryElement = [this](hive_node_h parentElements,
+                                         const QString &id, const QByteArray &data) {
+        const QByteArray elementId = id.toUtf8();
+        const hive_node_h element = hivex_node_add_child(
+            hive, parentElements, elementId.constData());
+        if (!element)
+            return false;
+        QByteArray key = QByteArrayLiteral("Element");
+        hive_set_value value = {
+            key.data(), hive_t_REG_BINARY,
+            static_cast<size_t>(data.size()),
+            const_cast<char *>(data.constData())
+        };
+        if (hivex_node_set_value(hive, element, &value, 0) == -1) {
+            hivex_node_delete_child(hive, element);
+            return false;
+        }
+        return true;
+    };
+
+    if ((!loaderPath.isEmpty() &&
+         !addStringElement(elements, QStringLiteral("12000002"), loaderPath)) ||
+        (!systemRoot.isEmpty() &&
+         !addStringElement(elements, QStringLiteral("22000002"), systemRoot))) {
+        deleteCreatedObjects();
         QMessageBox::critical(this, "Create failed", "Could not write the boot-entry path settings.");
         return;
     }
 
     if (!vhdDeviceDescriptor.isEmpty()) {
-        const auto addBinaryElement = [this, elements](const QString &id,
-                                                       const QByteArray &data) {
-            const QByteArray elementId = id.toUtf8();
-            const hive_node_h element = hivex_node_add_child(
-                hive, elements, elementId.constData());
-            if (!element)
-                return false;
-            QByteArray key = QByteArrayLiteral("Element");
-            hive_set_value value = {
-                key.data(), hive_t_REG_BINARY,
-                static_cast<size_t>(data.size()),
-                const_cast<char *>(data.constData())
-            };
-            if (hivex_node_set_value(hive, element, &value, 0) == -1) {
-                hivex_node_delete_child(hive, element);
-                return false;
-            }
-            return true;
-        };
-        if (!addBinaryElement(QStringLiteral("11000001"), vhdDeviceDescriptor) ||
-            !addBinaryElement(QStringLiteral("21000001"), vhdDeviceDescriptor)) {
-            hivex_node_delete_child(hive, object);
+        if (!addBinaryElement(elements, QStringLiteral("11000001"), vhdDeviceDescriptor) ||
+            !addBinaryElement(elements, QStringLiteral("21000001"), vhdDeviceDescriptor)) {
+            deleteCreatedObjects();
             QMessageBox::critical(this, "Create failed",
                                   "Could not write the VHD/VHDX device elements.");
+            return;
+        }
+    }
+
+    if (!ramdiskDeviceDescriptor.isEmpty()) {
+        const hive_node_h optionsDescriptionKey = hivex_node_add_child(
+            hive, ramdiskOptionsObject, "Description");
+        const hive_node_h optionsElements = hivex_node_add_child(
+            hive, ramdiskOptionsObject, "Elements");
+        const hive_node_h optionsNameElement = optionsElements
+            ? hivex_node_add_child(hive, optionsElements, "12000004") : 0;
+        QByteArray optionsTypeData;
+        for (int index = 0; index < 4; ++index)
+            optionsTypeData.append(static_cast<char>((0x30000000u >> (index * 8)) & 0xff));
+        QByteArray optionsTypeName = QByteArrayLiteral("Type");
+        hive_set_value optionsType = {
+            optionsTypeName.data(), hive_t_REG_DWORD,
+            static_cast<size_t>(optionsTypeData.size()), optionsTypeData.data()
+        };
+        const QString optionsDescriptionText = QStringLiteral("Ramdisk Options");
+        QByteArray optionsDescriptionData;
+        for (const QChar character : optionsDescriptionText) {
+            const quint16 codeUnit = character.unicode();
+            optionsDescriptionData.append(static_cast<char>(codeUnit & 0xff));
+            optionsDescriptionData.append(static_cast<char>((codeUnit >> 8) & 0xff));
+        }
+        optionsDescriptionData.append('\0');
+        optionsDescriptionData.append('\0');
+        QByteArray elementKey = QByteArrayLiteral("Element");
+        hive_set_value optionsDescriptionValue = {
+            elementKey.data(), hive_t_REG_SZ,
+            static_cast<size_t>(optionsDescriptionData.size()),
+            optionsDescriptionData.data()
+        };
+        if (!optionsDescriptionKey || !optionsElements || !optionsNameElement ||
+            hivex_node_set_value(hive, optionsDescriptionKey, &optionsType, 0) == -1 ||
+            hivex_node_set_value(hive, optionsNameElement, &optionsDescriptionValue, 0) == -1 ||
+            !addStringElement(optionsElements, QStringLiteral("32000004"), sdiPath) ||
+            !addBinaryElement(optionsElements, QStringLiteral("31000003"),
+                              buildBcdRamdiskSdiDeviceDescriptor()) ||
+            !addBinaryElement(elements, QStringLiteral("11000001"), ramdiskDeviceDescriptor) ||
+            !addBinaryElement(elements, QStringLiteral("21000001"), ramdiskDeviceDescriptor) ||
+            !addBinaryElement(elements, QStringLiteral("26000010"), QByteArray(1, '\1')) ||
+            !addBinaryElement(elements, QStringLiteral("26000022"), QByteArray(1, '\1'))) {
+            deleteCreatedObjects();
+            QMessageBox::critical(this, "Create failed",
+                                  "Could not write the WIM/Ramdisk device elements.");
             return;
         }
     }
@@ -1437,11 +1668,9 @@ void MainWindow::createBootEntry(const QString &templateId) {
     modified = true;
     refreshBootTree(guid);
     QString status = QStringLiteral("Created '%1'.").arg(description);
-    if (entryTemplate.needsSpecialDevice) {
-        status += QStringLiteral(" Configure its Ramdisk or VHD/VHDX device descriptor before using it.");
-    } else if (entryTemplate.copyBootManagerDevice && !copiedBootDevice) {
+    if (entryTemplate.copyBootManagerDevice && !copiedBootDevice) {
         status += QStringLiteral(" Add its device before using it.");
-    } else if (!entryTemplate.copyBootManagerDevice && entryTemplate.path.isEmpty()) {
+    } else if (!entryTemplate.copyBootManagerDevice && loaderPath.isEmpty()) {
         status += QStringLiteral(" Add its device and path before using it.");
     }
     status += QStringLiteral(" Unsaved changes.");

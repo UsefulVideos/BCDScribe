@@ -89,5 +89,39 @@ int main(int argc, char **argv) {
                                             descriptor, error),
                "Invalid partition identifiers were accepted") == false)
         return 1;
+
+    const QString optionsGuid = QStringLiteral("ae5534e0-a924-466c-b836-758539a3ee3a");
+    if (!expect(buildBcdRamdiskDeviceDescriptor(path, optionsGuid, descriptor, error),
+                "Ramdisk descriptor construction failed"))
+        return 1;
+    const QByteArray expectedOptionsGuid = QByteArray::fromHex(
+        "e03455ae24a96c46b836758539a3ee3a");
+    valid = true;
+    valid &= expect(descriptor.size() == 148 + pathBytes.size() - 2,
+                    "Ramdisk descriptor length is incorrect");
+    valid &= expect(descriptor.left(16) == expectedOptionsGuid,
+                    "Ramdisk options GUID is incorrectly encoded");
+    valid &= expect(readLittleEndian(descriptor, 24, 4) ==
+                        static_cast<quint64>(126 + pathBytes.size() - 2),
+                    "Ramdisk outer size field is incorrect");
+    valid &= expect(readLittleEndian(descriptor, 63, 4) ==
+                        static_cast<quint64>(86 + pathBytes.size() - 2),
+                    "Ramdisk nested size field is incorrect");
+    valid &= expect(descriptor.mid(146) == pathBytes,
+                    "Ramdisk WIM path is not UTF-16LE at the expected offset");
+    if (!valid)
+        return 1;
+
+    const QByteArray sdiDevice = buildBcdRamdiskSdiDeviceDescriptor();
+    if (!expect(sdiDevice.size() == 88 &&
+                    readLittleEndian(sdiDevice, 16, 4) == 5 &&
+                    readLittleEndian(sdiDevice, 24, 8) == 0x48,
+                "Ramdisk SDI device descriptor is invalid"))
+        return 1;
+
+    if (!expect(!buildBcdRamdiskDeviceDescriptor(path, QStringLiteral("invalid-guid"),
+                                                  descriptor, error),
+                "Invalid ramdisk options GUID was accepted"))
+        return 1;
     return 0;
 }
