@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
             executable = QCoreApplication::applicationFilePath();
         }
         arguments.append(executable);
-        arguments.append(QCoreApplication::arguments().mid(1));
+        arguments.append(originalArguments);
 
         if (!QProcess::startDetached(pkexec, arguments, QDir::currentPath())) {
             QMessageBox::critical(nullptr, "Administrator authorization failed",
