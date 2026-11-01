@@ -100,7 +100,7 @@ private:
     QTreeWidget *bootTree;
     QTableWidget *bootTable;
     QLabel *statusLabel;
-    QLabel *themeLabel = nullptr;
+    QLabel *headingInfoLabel = nullptr;
     hive_h *hive = nullptr;
     QString hivePath;
     QHash<QByteArray, PartitionMountLocation> partitionMounts;

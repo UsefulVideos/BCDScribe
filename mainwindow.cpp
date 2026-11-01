@@ -132,7 +132,8 @@ void MainWindow::changeEvent(QEvent *event) {
 }
 
 void MainWindow::updateThemeIndicator() {
-    if (!themeLabel)
+    QLabel *infoLabel = findChild<QLabel *>(QStringLiteral("headingInfoLabel"));
+    if (!infoLabel)
         return;
 
     QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").trimmed();
@@ -199,9 +200,8 @@ void MainWindow::updateThemeIndicator() {
     }
     if (themeName.isEmpty())
         themeName = styleName;
-    themeLabel->setText(QStringLiteral("Qt · %1 · %2 · %3")
-        .arg(desktopToolkit, themeName, mode));
-    themeLabel->setToolTip(QStringLiteral(
+    infoLabel->setToolTip(QStringLiteral(
+        "Windows Boot Configuration Data\n\n"
         "Application toolkit: Qt\nDesktop session: %1 (%2)\nSystem theme: %3\nQt widget style: %4\nAppearance: %5, detected from the system color scheme and palette.")
         .arg(desktopName, desktopToolkit, themeName, styleName, mode));
 }
@@ -220,10 +220,9 @@ void MainWindow::setupUI() {
     titleLabel->setFont(titleFont);
     heading->addWidget(titleLabel);
     heading->addStretch();
-    heading->addWidget(new QLabel("Windows Boot Configuration Data", this));
-    themeLabel = new QLabel(this);
-    themeLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    heading->addWidget(themeLabel);
+    headingInfoLabel = new QLabel("Windows Boot Configuration Data", this);
+    headingInfoLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    heading->addWidget(headingInfoLabel);
     updateThemeIndicator();
     connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
             this, [this](Qt::ColorScheme) { updateThemeIndicator(); });
