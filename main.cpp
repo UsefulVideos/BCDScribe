@@ -1,19 +1,90 @@
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDir>
+#include <QFileInfo>
 #include <QIcon>
 #include <QMessageBox>
 #include <QProcess>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QStyle>
 #include <QStringList>
+#include "console.h"
 #include "mainwindow.h"
 
 #ifdef Q_OS_LINUX
+#include <pwd.h>
+#include <sys/types.h>
 #include <unistd.h>
 #endif
 
+namespace {
+
+QString userConfigDirectory() {
+    QString path = qEnvironmentVariable("BCDSCRIBE_USER_CONFIG_HOME").trimmed();
+    if (!path.isEmpty())
+        return QDir::cleanPath(path);
+
+    QString home = QDir::homePath();
+#ifdef Q_OS_LINUX
+    bool resolvedSessionHome = false;
+    if (geteuid() == 0) {
+        bool validUid = false;
+        uint uid = qEnvironmentVariable("PKEXEC_UID").toUInt(&validUid);
+        if (!validUid)
+            uid = qEnvironmentVariable("SUDO_UID").toUInt(&validUid);
+        const passwd *user = validUid ? getpwuid(static_cast<uid_t>(uid)) : nullptr;
+        if (user && user->pw_dir) {
+            home = QString::fromLocal8Bit(user->pw_dir);
+            resolvedSessionHome = true;
+        }
+    }
+#else
+    const bool resolvedSessionHome = false;
+#endif
+    path = qEnvironmentVariable("XDG_CONFIG_HOME").trimmed();
+    if (!path.isEmpty()) {
+        if (!resolvedSessionHome)
+            return QDir::cleanPath(path);
+        const QString relativePath = QDir(home).relativeFilePath(path);
+        if (QDir::isAbsolutePath(path) && relativePath != QStringLiteral("..") &&
+            !relativePath.startsWith(QStringLiteral("../")))
+            return QDir::cleanPath(path);
+    }
+    return QDir(home).filePath(QStringLiteral(".config"));
+}
+
+bool isConsoleInvocation(const QStringList &arguments) {
+    if (arguments.isEmpty())
+        return false;
+    const QString first = arguments.first().toLower();
+    return first == QStringLiteral("--help") || first == QStringLiteral("-h") ||
+        first == QStringLiteral("/?") || first == QStringLiteral("--version") ||
+        first == QStringLiteral("--store") || first == QStringLiteral("/store") ||
+        first == QStringLiteral("/enum") ||
+        first == QStringLiteral("/export") || first == QStringLiteral("/import") ||
+        first == QStringLiteral("/create") || first == QStringLiteral("/set") ||
+        first == QStringLiteral("/delete") || first == QStringLiteral("/deletevalue") ||
+        first == QStringLiteral("/timeout") || first == QStringLiteral("/default") ||
+        first == QStringLiteral("/displayorder") ||
+        first == QStringLiteral("/bootsequence") ||
+        first == QStringLiteral("/toolsdisplayorder") ||
+        first == QStringLiteral("/bootdebug") || first == QStringLiteral("/debug") ||
+        first == QStringLiteral("/ems") || first == QStringLiteral("/event") ||
+        first == QStringLiteral("/badmemoryaccess");
+}
+
+}
+
 int main(int argc, char *argv[]) {
-    QApplication app(argc, argv);
+    QStringList originalArguments;
+    for (int index = 1; index < argc; ++index)
+        originalArguments.append(QString::fromLocal8Bit(argv[index]));
+    if (isConsoleInvocation(originalArguments))
+        return runConsoleCommand(argc, argv);
+
+    const QString configDirectory = userConfigDirectory();
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, configDirectory);
 
 #ifdef Q_OS_LINUX
     if (geteuid() != 0 && !qEnvironmentVariableIsSet("BCDSCRIBE_ELEVATED")) {
@@ -29,6 +100,8 @@ int main(int argc, char *argv[]) {
             QStandardPaths::findExecutable(QStringLiteral("env")),
             QStringLiteral("BCDSCRIBE_ELEVATED=1")
         };
+        arguments.append(QStringLiteral("BCDSCRIBE_USER_CONFIG_HOME=%1")
+                             .arg(configDirectory));
         const QStringList displayVariables = {
             QStringLiteral("DISPLAY"),
             QStringLiteral("WAYLAND_DISPLAY"),
@@ -36,6 +109,14 @@ int main(int argc, char *argv[]) {
             QStringLiteral("XDG_SESSION_TYPE"),
             QStringLiteral("XDG_CURRENT_DESKTOP"),
             QStringLiteral("XDG_SESSION_DESKTOP"),
+            QStringLiteral("XDG_CONFIG_DIRS"),
+            QStringLiteral("XDG_DATA_DIRS"),
+            QStringLiteral("DBUS_SESSION_BUS_ADDRESS"),
+            QStringLiteral("QT_QPA_PLATFORMTHEME"),
+            QStringLiteral("QT_STYLE_OVERRIDE"),
+            QStringLiteral("GTK_THEME"),
+            QStringLiteral("KDE_SESSION_VERSION"),
+            QStringLiteral("KDE_FULL_SESSION"),
             QStringLiteral("XAUTHORITY"),
             QStringLiteral("QT_QPA_PLATFORM")
         };
@@ -62,6 +143,9 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 #endif
+
+    QApplication app(argc, argv);
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, configDirectory);
 
     QIcon appIcon = QIcon::fromTheme("preferences-system");
     if (appIcon.isNull())

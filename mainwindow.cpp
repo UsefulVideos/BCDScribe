@@ -37,6 +37,7 @@
 #include <QSplitter>
 #include <QSettings>
 #include <QStyle>
+#include <QStyleFactory>
 #include <QStyleHints>
 #include <QShortcut>
 #include <QStringList>
@@ -56,6 +57,7 @@
 #ifdef Q_OS_LINUX
 #include <pwd.h>
 #include <sys/types.h>
+#include <unistd.h>
 #endif
 
 #ifndef BCDSCRIBE_GITHUB_REPOSITORY
@@ -75,6 +77,38 @@ static QStringList bcd_reference_values(hive_h *hive, hive_value_h value);
 static QString bcd_reference_value_text(hive_h *hive, hive_value_h value);
 static QString value_data_text(hive_h *hive, hive_value_h value);
 static QString bcd_catalog_option_name(const QString &id);
+
+static bool preserveUserConfigOwnership(const QString &settingsFile) {
+#ifdef Q_OS_LINUX
+    if (geteuid() != 0)
+        return true;
+
+    bool validUid = false;
+    uint uid = qEnvironmentVariable("PKEXEC_UID").toUInt(&validUid);
+    if (!validUid)
+        uid = qEnvironmentVariable("SUDO_UID").toUInt(&validUid);
+    if (!validUid)
+        return true;
+
+    const passwd *user = getpwuid(static_cast<uid_t>(uid));
+    if (!user)
+        return false;
+
+    const QByteArray filePath = QFile::encodeName(settingsFile);
+    if (chown(filePath.constData(), user->pw_uid, user->pw_gid) == -1)
+        return false;
+
+    const QFileInfo directoryInfo(QFileInfo(settingsFile).absolutePath());
+    if (directoryInfo.ownerId() == 0) {
+        const QByteArray directoryPath = QFile::encodeName(directoryInfo.absoluteFilePath());
+        if (chown(directoryPath.constData(), user->pw_uid, user->pw_gid) == -1)
+            return false;
+    }
+#else
+    Q_UNUSED(settingsFile);
+#endif
+    return true;
+}
 
 struct HotkeySpec {
     const char *id;
@@ -108,6 +142,8 @@ static const QVector<HotkeySpec> &hotkey_specs() {
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
+    systemStyleName = QApplication::style()->objectName();
+    systemPalette = QApplication::palette();
     setupUI();
 }
 
@@ -159,15 +195,13 @@ void MainWindow::updateThemeIndicator() {
     }
 
     const Qt::ColorScheme scheme = QGuiApplication::styleHints()->colorScheme();
-    const bool dark = scheme == Qt::ColorScheme::Dark ||
-        (scheme == Qt::ColorScheme::Unknown &&
-         QApplication::palette().color(QPalette::Window).lightness() < 128);
-    const QString mode = dark ? QStringLiteral("Dark") : QStringLiteral("Light");
     const QString style = QApplication::style()->objectName();
     const QString styleName = style.isEmpty() ? QStringLiteral("system style") : style;
     const QString desktopName = desktop.isEmpty()
         ? QStringLiteral("unknown desktop") : desktop;
-    QString configHome = qEnvironmentVariable("XDG_CONFIG_HOME").trimmed();
+    QString configHome = qEnvironmentVariable("BCDSCRIBE_USER_CONFIG_HOME").trimmed();
+    if (configHome.isEmpty())
+        configHome = qEnvironmentVariable("XDG_CONFIG_HOME").trimmed();
     if (configHome.isEmpty()) {
         QString userHome = QDir::homePath();
 #ifdef Q_OS_LINUX
@@ -200,6 +234,17 @@ void MainWindow::updateThemeIndicator() {
     }
     if (themeName.isEmpty())
         themeName = styleName;
+    const QString configuredScheme = QSettings(
+        QStringLiteral("BCDScribe"), QStringLiteral("BCDScribe"))
+        .value(QStringLiteral("theme/colorScheme"), QStringLiteral("system")).toString();
+    const bool dark = configuredScheme == QStringLiteral("dark")
+        ? true
+        : configuredScheme == QStringLiteral("light")
+            ? false
+            : scheme == Qt::ColorScheme::Dark ||
+                (scheme == Qt::ColorScheme::Unknown &&
+                 QApplication::palette().color(QPalette::Window).lightness() < 128);
+    const QString mode = dark ? QStringLiteral("Dark") : QStringLiteral("Light");
     infoLabel->setToolTip(QStringLiteral(
         "Windows Boot Configuration Data\n\n"
         "Application toolkit: Qt\nDesktop session: %1 (%2)\nSystem theme: %3\nQt widget style: %4\nAppearance: %5, detected from the system color scheme and palette.")
@@ -221,6 +266,7 @@ void MainWindow::setupUI() {
     heading->addWidget(titleLabel);
     heading->addStretch();
     headingInfoLabel = new QLabel("Windows Boot Configuration Data", this);
+    headingInfoLabel->setObjectName(QStringLiteral("headingInfoLabel"));
     headingInfoLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     heading->addWidget(headingInfoLabel);
     updateThemeIndicator();
@@ -361,6 +407,7 @@ void MainWindow::setupUI() {
     referenceLayout->addWidget(referenceSplitter);
     modeTabs->addTab(referencePage, "BCDScribe reference");
     setupHotkeysTab();
+    setupThemeTab();
 
     auto *aboutPage = new QWidget(modeTabs);
     auto *aboutLayout = new QVBoxLayout(aboutPage);
@@ -433,6 +480,149 @@ void MainWindow::setupUI() {
             [this](int, int) { editSelectedValue(); });
     updateActions();
     applyHotkeys(false);
+}
+
+void MainWindow::setupThemeTab() {
+    auto *page = new QWidget(modeTabs);
+    auto *layout = new QVBoxLayout(page);
+    auto *form = new QFormLayout();
+    auto *description = new QLabel(
+        QStringLiteral("By default, BCDScribe follows the desktop theme and Qt platform style. "
+                       "The default is the distro's theme, including when launched with administrator privileges."),
+        page);
+    description->setWordWrap(true);
+    layout->addWidget(description);
+
+    themeStyleCombo = new QComboBox(page);
+    themeStyleCombo->addItem(QStringLiteral("Distro default"), QString());
+    QStringList styles = QStyleFactory::keys();
+    styles.sort(Qt::CaseInsensitive);
+    for (const QString &style : styles)
+        themeStyleCombo->addItem(style, style);
+
+    themeColorCombo = new QComboBox(page);
+    themeColorCombo->addItem(QStringLiteral("System / distro default"),
+                             QStringLiteral("system"));
+    themeColorCombo->addItem(QStringLiteral("Light"), QStringLiteral("light"));
+    themeColorCombo->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
+    form->addRow(QStringLiteral("Widget style:"), themeStyleCombo);
+    form->addRow(QStringLiteral("Color scheme:"), themeColorCombo);
+    layout->addLayout(form);
+
+    auto *buttons = new QHBoxLayout();
+    auto *applyButton = new QPushButton(QStringLiteral("Apply theme"), page);
+    auto *resetButton = new QPushButton(QStringLiteral("Use distro default"), page);
+    buttons->addWidget(applyButton);
+    buttons->addWidget(resetButton);
+    buttons->addStretch();
+    layout->addLayout(buttons);
+    layout->addStretch();
+    modeTabs->addTab(page, QStringLiteral("Theme"));
+
+    QSettings settings(QStringLiteral("BCDScribe"), QStringLiteral("BCDScribe"));
+    const QString savedStyle = settings.value(
+        QStringLiteral("theme/widgetStyle")).toString();
+    int styleIndex = themeStyleCombo->findData(savedStyle);
+    if (styleIndex < 0)
+        styleIndex = 0;
+    themeStyleCombo->setCurrentIndex(styleIndex);
+    const QString savedScheme = settings.value(
+        QStringLiteral("theme/colorScheme"), QStringLiteral("system")).toString();
+    int schemeIndex = themeColorCombo->findData(savedScheme);
+    if (schemeIndex < 0)
+        schemeIndex = 0;
+    themeColorCombo->setCurrentIndex(schemeIndex);
+    if (!savedStyle.isEmpty() || savedScheme != QStringLiteral("system"))
+        applyTheme(false);
+
+    connect(applyButton, &QPushButton::clicked, this, [this]() {
+        if (applyTheme(true))
+            statusLabel->setText(QStringLiteral("Theme settings saved."));
+    });
+    connect(resetButton, &QPushButton::clicked, this, [this]() {
+        themeStyleCombo->setCurrentIndex(0);
+        themeColorCombo->setCurrentIndex(0);
+        if (applyTheme(true))
+            statusLabel->setText(QStringLiteral("Using the distro's default theme."));
+    });
+}
+
+bool MainWindow::applyTheme(bool saveSettings) {
+    const QString styleName = themeStyleCombo->currentData().toString();
+    if (styleName.isEmpty()) {
+        if (!systemStyleName.isEmpty()) {
+            QStyle *style = QStyleFactory::create(systemStyleName);
+            if (!style) {
+                QMessageBox::warning(
+                    this, QStringLiteral("Theme unavailable"),
+                    QStringLiteral("Could not restore the system widget style '%1'.")
+                        .arg(systemStyleName));
+                return false;
+            }
+            QApplication::setStyle(style);
+        }
+    } else {
+        QStyle *style = QStyleFactory::create(styleName);
+        if (!style) {
+            QMessageBox::warning(
+                this, QStringLiteral("Theme unavailable"),
+                QStringLiteral("The Qt widget style '%1' is not available.")
+                    .arg(styleName));
+            return false;
+        }
+        QApplication::setStyle(style);
+    }
+
+    const QString colorScheme = themeColorCombo->currentData().toString();
+    if (colorScheme == QStringLiteral("system")) {
+        QApplication::setPalette(systemPalette);
+    } else {
+        QPalette palette = systemPalette;
+        if (colorScheme == QStringLiteral("dark")) {
+            palette.setColor(QPalette::Window, QColor(35, 38, 41));
+            palette.setColor(QPalette::WindowText, QColor(239, 240, 241));
+            palette.setColor(QPalette::Base, QColor(27, 30, 32));
+            palette.setColor(QPalette::AlternateBase, QColor(42, 46, 50));
+            palette.setColor(QPalette::ToolTipBase, QColor(49, 54, 59));
+            palette.setColor(QPalette::ToolTipText, QColor(239, 240, 241));
+            palette.setColor(QPalette::Text, QColor(239, 240, 241));
+            palette.setColor(QPalette::Button, QColor(49, 54, 59));
+            palette.setColor(QPalette::ButtonText, QColor(239, 240, 241));
+            palette.setColor(QPalette::BrightText, QColor(255, 0, 0));
+            palette.setColor(QPalette::Highlight, QColor(61, 174, 233));
+            palette.setColor(QPalette::HighlightedText, QColor(0, 0, 0));
+        } else {
+            palette.setColor(QPalette::Window, QColor(239, 240, 241));
+            palette.setColor(QPalette::WindowText, QColor(35, 38, 41));
+            palette.setColor(QPalette::Base, QColor(255, 255, 255));
+            palette.setColor(QPalette::AlternateBase, QColor(247, 247, 247));
+            palette.setColor(QPalette::ToolTipBase, QColor(255, 255, 220));
+            palette.setColor(QPalette::ToolTipText, QColor(35, 38, 41));
+            palette.setColor(QPalette::Text, QColor(35, 38, 41));
+            palette.setColor(QPalette::Button, QColor(239, 240, 241));
+            palette.setColor(QPalette::ButtonText, QColor(35, 38, 41));
+            palette.setColor(QPalette::BrightText, QColor(255, 0, 0));
+            palette.setColor(QPalette::Highlight, QColor(61, 174, 233));
+            palette.setColor(QPalette::HighlightedText, QColor(255, 255, 255));
+        }
+        QApplication::setPalette(palette);
+    }
+
+    if (saveSettings) {
+        QSettings settings(QStringLiteral("BCDScribe"), QStringLiteral("BCDScribe"));
+        settings.setValue(QStringLiteral("theme/widgetStyle"), styleName);
+        settings.setValue(QStringLiteral("theme/colorScheme"), colorScheme);
+        settings.sync();
+        if (settings.status() != QSettings::NoError ||
+            !preserveUserConfigOwnership(settings.fileName())) {
+            QMessageBox::warning(
+                this, QStringLiteral("Theme settings not saved"),
+                QStringLiteral("The theme is applied, but its settings could not be saved to the user configuration."));
+            return false;
+        }
+    }
+    updateThemeIndicator();
+    return true;
 }
 
 void MainWindow::setupHotkeysTab() {

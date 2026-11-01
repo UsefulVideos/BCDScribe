@@ -33,6 +33,8 @@ set(CMAKE_AUTOUIC ON)
 
 add_executable(BCDScribe
     main.cpp
+    console.h
+    console.cpp
     mainwindow.h
     mainwindow.cpp
     bcddevice.h
@@ -59,6 +61,8 @@ if(BUILD_TESTING)
     )
     target_link_libraries(BCDScribeDeviceDescriptorTests PRIVATE Qt6::Core)
     add_test(NAME BCDScribeDeviceDescriptorTests COMMAND BCDScribeDeviceDescriptorTests)
+    add_test(NAME BCDScribeConsoleHelp COMMAND BCDScribe --help)
+    add_test(NAME BCDScribeConsoleVersion COMMAND BCDScribe --version)
 endif()
 
 install(TARGETS BCDScribe

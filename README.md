@@ -20,6 +20,27 @@ BCDScribe edits offline store files. It does not run Windows `bcdedit.exe` or di
 
 On Linux, BCDScribe requests administrator authorization through PolicyKit at launch. The application then runs with elevated privileges; review BCD stores carefully before saving changes.
 
+The **Theme** tab follows the distro's Qt/platform theme by default and stores preferences in the logged-in desktop user's configuration directory, even when the editor is elevated. Optional Qt widget styles and Light/Dark palettes can be selected explicitly.
+
+## Console commands
+
+BCDScribe also supports offline-store commands without starting the GUI or opening a PolicyKit prompt:
+
+```sh
+BCDScribe --help
+BCDScribe --store /path/to/BCD /enum
+BCDScribe --store /path/to/BCD /create "Windows PE" --write
+BCDScribe --store /path/to/BCD /set '{GUID}' 12000004 string "Windows PE" --write
+BCDScribe --store /path/to/BCD /deletevalue '{GUID}' 12000004 --write
+BCDScribe --store /path/to/BCD /delete '{GUID}' --write
+BCDScribe --store /path/to/BCD /timeout 10 --write
+BCDScribe --store /path/to/BCD /default '{GUID}' --write
+BCDScribe --store /path/to/BCD /displayorder '{GUID}' '{OTHER-GUID}' --write
+BCDScribe --store /path/to/BCD /bootdebug '{GUID}' on --write
+```
+
+The console currently implements `/enum`, `/export`, `/import`, `/create`, `/set`, `/delete`, `/deletevalue`, `/timeout`, `/default`, `/displayorder`, `/bootsequence`, `/toolsdisplayorder`, `/bootdebug`, `/debug`, `/ems`, `/event`, and `/badmemoryaccess`. `/enum` and `/export` are read-only. Commands that change a store require `--write`; binary values for `/set` use comma-separated hex bytes (for example `01,00,ff`), and the optional `--type DWORD` on `/create` changes the object's BCD type. Run the command with permissions to access the selected offline store.
+
 VHD/VHDX entry creation requires `qemu-nbd`, `sfdisk`, `findmnt`, and `lsblk`, plus the Linux `nbd` kernel module. The app attaches the selected image read-only to inspect its partition table and detaches it before writing the BCD store. If no `/dev/nbdN` device is available, load the module (for example, `sudo modprobe nbd`) and retry. The VHD file must be stored on a GPT/MBR partition that Windows Boot Manager can read; select the partition inside the image that contains the Windows installation.
 
 WIM/Ramdisk entry creation provides editable text fields for the WIM image, SDI file, Windows loader, and Windows directory paths. It writes the ramdisk device and options objects into the BCD store. The header shows the Qt style, detected desktop toolkit, and current light/dark color scheme; Qt's native platform style and palette remain in control.

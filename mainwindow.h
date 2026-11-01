@@ -6,6 +6,7 @@
 #include <QVector>
 #include <QPushButton>
 #include <QLineEdit>
+#include <QPalette>
 #include <QString>
 #include <hivex.h>
 
@@ -83,6 +84,8 @@ private:
     void createNewField();
     void deleteSelectedElement();
     void setupHotkeysTab();
+    void setupThemeTab();
+    bool applyTheme(bool saveSettings);
     bool applyHotkeys(bool saveSettings);
     QKeySequence hotkeySequence(const QString &id) const;
     void refreshPartitionMounts();
@@ -101,6 +104,10 @@ private:
     QTableWidget *bootTable;
     QLabel *statusLabel;
     QLabel *headingInfoLabel = nullptr;
+    QComboBox *themeStyleCombo = nullptr;
+    QComboBox *themeColorCombo = nullptr;
+    QString systemStyleName;
+    QPalette systemPalette;
     hive_h *hive = nullptr;
     QString hivePath;
     QHash<QByteArray, PartitionMountLocation> partitionMounts;
