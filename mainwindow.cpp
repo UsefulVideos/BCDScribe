@@ -2271,6 +2271,11 @@ void MainWindow::editSelectedValue() {
     }
     bool accepted = false;
     QByteArray newData;
+    hive_node_h pairedDeviceNode = 0;
+    QByteArray pairedDeviceData;
+    QByteArray pairedOriginalData;
+    hive_type pairedOriginalType = hive_t_REG_NONE;
+    hive_node_h createdRamdiskOptions = 0;
     QString elementId;
     char *rawElementId = hivex_node_name(hive, node);
     if (rawElementId) {
@@ -2535,40 +2540,39 @@ void MainWindow::editSelectedValue() {
             }
         }
 
-        if (partitionGuidOffset < 0) {
-            QMessageBox::warning(this, "Unknown device descriptor",
-                                 "The descriptor does not contain a PARTUUID known to lsblk. "
-                                 "It was left unchanged to avoid corrupting the BCD entry.");
-            return;
-        }
-        if (mountChoices.isEmpty()) {
-            QMessageBox::warning(this, "No mounted partitions",
-                                 "lsblk did not report any mounted partitions to choose from.");
-            return;
-        }
         mountChoices.sort(Qt::CaseInsensitive);
 
-    QString selectedMount;
+        enum class DeviceTabSelection {
+            Partition,
+            Vhd,
+            Ramdisk
+        };
+        DeviceTabSelection deviceSelection = DeviceTabSelection::Partition;
+        QByteArray selectedDescriptor;
+        QString selectedSdiPath;
+        QString selectedRamdiskOptionsGuid;
         {
             QDialog dialog(this);
             dialog.setWindowTitle(elementId == QStringLiteral("11000001")
-                ? "Choose application device" : "Choose boot device");
+                                      ? "Choose application device"
+                                      : "Choose boot device");
+            auto *layout = new QVBoxLayout(&dialog);
+            auto *deviceTabs = new QTabWidget(&dialog);
 
-        auto *layout = new QVBoxLayout(&dialog);
-
+            auto *partitionPage = new QWidget(deviceTabs);
+            auto *partitionLayout = new QVBoxLayout(partitionPage);
             auto *currentMountLabel = new QLabel(
                 QStringLiteral("Current Linux mount point(s): %1\nLinux partition: %2")
                     .arg(currentLocation.mountPoints.isEmpty()
                              ? QStringLiteral("Not mounted")
                              : currentLocation.mountPoints.join(QStringLiteral(", ")),
                          currentLocation.devicePath),
-                &dialog);
+                partitionPage);
             currentMountLabel->setWordWrap(true);
-            layout->addWidget(currentMountLabel);
+            partitionLayout->addWidget(currentMountLabel);
 
-            // Upper dropdown: Disks / SSDs
-            layout->addWidget(new QLabel("Target Disk / Drive:", &dialog));
-            auto *diskCombo = new QComboBox(&dialog);
+            partitionLayout->addWidget(new QLabel("Target Disk / Drive:", partitionPage));
+            auto *diskCombo = new QComboBox(partitionPage);
 
             QStringList diskChoices;
             for (const QString &choice : mountChoices) {
@@ -2604,14 +2608,15 @@ void MainWindow::editSelectedValue() {
                     diskChoices.append(disk);
                 }
             }
-            if (diskChoices.isEmpty()) diskChoices.append("System Disks");
+            if (diskChoices.isEmpty())
+                diskChoices.append("System Disks");
             diskCombo->addItems(diskChoices);
-            layout->addWidget(diskCombo);
+            partitionLayout->addWidget(diskCombo);
 
-            // Lower dropdown: Partitions / Mountpoints
-            layout->addWidget(new QLabel("Target Partition / Mountpoint:", &dialog));
-            auto *partitionCombo = new QComboBox(&dialog);
-            layout->addWidget(partitionCombo);
+            partitionLayout->addWidget(
+                new QLabel("Target Partition / Mountpoint:", partitionPage));
+            auto *partitionCombo = new QComboBox(partitionPage);
+            partitionLayout->addWidget(partitionCombo);
 
             QString currentDisk;
             for (const QString &disk : diskChoices) {
@@ -2627,13 +2632,12 @@ void MainWindow::editSelectedValue() {
             auto updatePartitions = [partitionCombo, mountChoices](const QString &selectedDisk) {
                 partitionCombo->clear();
                 for (const QString &choice : mountChoices) {
-                    if (choice.contains(selectedDisk)) {
+                    if (!selectedDisk.isEmpty() && choice.contains(selectedDisk)) {
                         partitionCombo->addItem(choice);
                     }
                 }
-                if (partitionCombo->count() == 0) {
+                if (partitionCombo->count() == 0)
                     partitionCombo->addItems(mountChoices);
-                }
             };
 
             updatePartitions(diskCombo->currentText());
@@ -2647,7 +2651,56 @@ void MainWindow::editSelectedValue() {
 
             QObject::connect(diskCombo, &QComboBox::currentTextChanged, updatePartitions);
 
-            auto *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+            deviceTabs->addTab(partitionPage, QStringLiteral("Partition"));
+
+            auto *vhdPage = new QWidget(deviceTabs);
+            auto *vhdLayout = new QVBoxLayout(vhdPage);
+            vhdLayout->addWidget(new QLabel(
+                QStringLiteral("Select a VHD/VHDX image. BCDScribe inspects it read-only and creates a boot-device descriptor."),
+                vhdPage));
+            auto *vhdStatus = new QLabel(QStringLiteral("No VHD/VHDX image selected."), vhdPage);
+            vhdStatus->setWordWrap(true);
+            vhdLayout->addWidget(vhdStatus);
+            auto *selectVhdButton = new QPushButton(
+                QStringLiteral("Select VHD/VHDX image..."), vhdPage);
+            vhdLayout->addWidget(selectVhdButton);
+            vhdLayout->addStretch();
+            QByteArray vhdDescriptor;
+            connect(selectVhdButton, &QPushButton::clicked, &dialog, [&]() {
+                QByteArray descriptor;
+                QString error;
+                const VhdSetupResult result = promptForVhdDevice(
+                    &dialog, descriptor, error);
+                if (result == VhdSetupResult::Failed) {
+                    QMessageBox::warning(&dialog,
+                                         QStringLiteral("Cannot configure VHD/VHDX device"), error);
+                } else if (result == VhdSetupResult::Ready) {
+                    vhdDescriptor = descriptor;
+                    vhdStatus->setText(QStringLiteral("VHD/VHDX device ready."));
+                }
+            });
+            deviceTabs->addTab(vhdPage, QStringLiteral("VHD/VHDX"));
+
+            auto *ramdiskPage = new QWidget(deviceTabs);
+            auto *ramdiskLayout = new QFormLayout(ramdiskPage);
+            auto *wimPathEdit = new QLineEdit(
+                QStringLiteral("\\sources\\boot.wim"), ramdiskPage);
+            auto *sdiPathEdit = new QLineEdit(
+                QStringLiteral("\\Boot\\boot.sdi"), ramdiskPage);
+            wimPathEdit->setPlaceholderText(QStringLiteral("\\sources\\boot.wim"));
+            sdiPathEdit->setPlaceholderText(QStringLiteral("\\Boot\\boot.sdi"));
+            ramdiskLayout->addRow(QStringLiteral("WIM image path:"), wimPathEdit);
+            ramdiskLayout->addRow(QStringLiteral("Ramdisk SDI (boot.sdi) path:"),
+                                  sdiPathEdit);
+            ramdiskLayout->addRow(new QLabel(
+                QStringLiteral("Enter paths relative to the selected Windows boot partition."),
+                ramdiskPage));
+            deviceTabs->addTab(ramdiskPage, QStringLiteral("WIM/Ramdisk"));
+
+            layout->addWidget(deviceTabs);
+
+            auto *buttonBox = new QDialogButtonBox(
+                QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
             layout->addWidget(buttonBox);
 
             QObject::connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
@@ -2655,23 +2708,231 @@ void MainWindow::editSelectedValue() {
 
             accepted = false;
             if (dialog.exec() == QDialog::Accepted) {
-                accepted = true;
-                selectedMount = partitionCombo->currentText();
+                const int selectedTab = deviceTabs->currentIndex();
+                if (selectedTab == 0) {
+                    if (partitionGuidOffset < 0) {
+                        QMessageBox::warning(
+                            this, QStringLiteral("Unknown partition device"),
+                            QStringLiteral("The current descriptor has no partition identifier known to lsblk. Select the VHD/VHDX or WIM/Ramdisk tab instead."));
+                    } else if (mountChoices.isEmpty()) {
+                        QMessageBox::warning(
+                            this, QStringLiteral("No mounted partitions"),
+                            QStringLiteral("lsblk did not report any mounted partitions to choose from."));
+                    } else {
+                        const QByteArray partitionGuid =
+                            guidByChoice.value(partitionCombo->currentText());
+                        if (partitionGuid.size() != 16) {
+                            QMessageBox::warning(
+                                this, QStringLiteral("Invalid partition"),
+                                QStringLiteral("Could not resolve the selected partition identifier."));
+                        } else {
+                            newData.replace(partitionGuidOffset, partitionGuid.size(),
+                                            partitionGuid);
+                            selectedDescriptor = newData;
+                            deviceSelection = DeviceTabSelection::Partition;
+                            accepted = true;
+                        }
+                    }
+                } else if (selectedTab == 1) {
+                    if (vhdDescriptor.isEmpty()) {
+                        QMessageBox::warning(
+                            this, QStringLiteral("VHD/VHDX not selected"),
+                            QStringLiteral("Select and inspect a VHD/VHDX image before continuing."));
+                    } else {
+                        selectedDescriptor = vhdDescriptor;
+                        deviceSelection = DeviceTabSelection::Vhd;
+                        accepted = true;
+                    }
+                } else {
+                    selectedRamdiskOptionsGuid = QUuid::createUuid()
+                                                     .toString(QUuid::WithoutBraces)
+                                                     .toLower();
+                    QString error;
+                    if (!buildBcdRamdiskDeviceDescriptor(
+                            wimPathEdit->text().trimmed(),
+                            selectedRamdiskOptionsGuid, selectedDescriptor, error)) {
+                        QMessageBox::warning(
+                            this, QStringLiteral("Invalid WIM/Ramdisk device"), error);
+                    } else {
+                        selectedSdiPath = sdiPathEdit->text().trimmed();
+                        const QString invalidCharacters = QStringLiteral("<>:\"|?*");
+                        bool validSdiPath =
+                            selectedSdiPath.startsWith(QLatin1Char('\\')) &&
+                            !selectedSdiPath.endsWith(QLatin1Char('\\')) &&
+                            !selectedSdiPath.contains(QLatin1Char('/'));
+                        for (const QChar character : selectedSdiPath) {
+                            if (character.unicode() < 0x20 ||
+                                invalidCharacters.contains(character)) {
+                                validSdiPath = false;
+                                break;
+                            }
+                        }
+                        if (!validSdiPath) {
+                            QMessageBox::warning(
+                                this, QStringLiteral("Invalid SDI path"),
+                                QStringLiteral("Enter the boot.sdi path as an absolute Windows path beginning with a backslash."));
+                            selectedDescriptor.clear();
+                        } else {
+                            deviceSelection = DeviceTabSelection::Ramdisk;
+                            accepted = true;
+                        }
+                    }
+                }
             }
         }
 
         if (!accepted)
             return;
 
-        const QByteArray newPartitionGuid = guidByChoice.value(selectedMount);
-        if (newPartitionGuid.size() != 16) {
-            QMessageBox::warning(this, "Invalid partition", "Could not resolve the selected partition identifier.");
-            return;
+        newData = selectedDescriptor;
+        const hive_node_h bootObject = static_cast<hive_node_h>(
+            selectedItem->data(Qt::UserRole + 1).toULongLong());
+        const hive_node_h bootElements = bootObject
+                                             ? findChildNode(bootObject, QStringLiteral("Elements"))
+                                             : 0;
+        const QString pairedElementId = elementId == QStringLiteral("11000001")
+                                            ? QStringLiteral("21000001")
+                                            : QStringLiteral("11000001");
+        const hive_node_h pairedElement = bootElements
+                                              ? findChildNode(bootElements, pairedElementId)
+                                              : 0;
+        pairedDeviceNode = pairedElement;
+        if (pairedDeviceNode) {
+            hive_value_h pairedValue = hivex_node_get_value(
+                hive, pairedDeviceNode, "Element");
+            if (!pairedValue) {
+                QMessageBox::warning(
+                    this, QStringLiteral("Invalid paired device"),
+                    QStringLiteral("The other device element has no Element value and cannot be safely updated."));
+                return;
+            } else {
+                char *rawPairedData = hivex_value_value(
+                    hive, pairedValue, &type, &length);
+                pairedOriginalType = type;
+                pairedOriginalData = rawPairedData
+                                         ? QByteArray(rawPairedData, static_cast<int>(length))
+                                         : QByteArray();
+                free(rawPairedData);
+                if (pairedOriginalData.isEmpty() ||
+                    pairedOriginalType != hive_t_REG_BINARY) {
+                    QMessageBox::warning(
+                        this, QStringLiteral("Invalid paired device"),
+                        QStringLiteral("The other device element is empty and "
+                                       "cannot be safely updated."));
+                    return;
+                }
+                pairedDeviceData = selectedDescriptor;
+                type = hive_t_REG_BINARY;
+            }
         }
-        newData.replace(partitionGuidOffset, newPartitionGuid.size(), newPartitionGuid);
+
+        if (deviceSelection == DeviceTabSelection::Ramdisk) {
+            const hive_node_h objects =
+                findChildNode(hivex_root(hive), QStringLiteral("Objects"));
+            const QByteArray optionsName =
+                QStringLiteral("{%1}").arg(selectedRamdiskOptionsGuid).toUtf8();
+            createdRamdiskOptions =
+                objects
+                    ? hivex_node_add_child(hive, objects, optionsName.constData())
+                    : 0;
+            if (!createdRamdiskOptions) {
+                QMessageBox::critical(
+                    this, QStringLiteral("Ramdisk options failed"),
+                    QStringLiteral(
+                        "Could not create the WIM/Ramdisk options object."));
+                return;
+            }
+
+            const auto addOptionsString = [this](hive_node_h parent,
+                                                 const QString &id,
+                                                 const QString &text) {
+                const QByteArray childName = id.toUtf8();
+                const hive_node_h element =
+                    hivex_node_add_child(hive, parent, childName.constData());
+                if (!element)
+                    return false;
+                QByteArray data;
+                for (const QChar character : text) {
+                    const quint16 codeUnit = character.unicode();
+                    data.append(static_cast<char>(codeUnit & 0xff));
+                    data.append(static_cast<char>((codeUnit >> 8) & 0xff));
+                }
+                data.append('\0');
+                data.append('\0');
+                QByteArray key = QByteArrayLiteral("Element");
+                hive_set_value setValue = {key.data(), hive_t_REG_SZ,
+                                           static_cast<size_t>(data.size()),
+                                           data.data()};
+                if (hivex_node_set_value(hive, element, &setValue, 0) == -1) {
+                    hivex_node_delete_child(hive, element);
+                    return false;
+                }
+                return true;
+            };
+            const auto addOptionsBinary = [this](hive_node_h parent,
+                                                 const QString &id,
+                                                 const QByteArray &data) {
+                const QByteArray childName = id.toUtf8();
+                const hive_node_h element =
+                    hivex_node_add_child(hive, parent, childName.constData());
+                if (!element)
+                    return false;
+                QByteArray key = QByteArrayLiteral("Element");
+                hive_set_value setValue = {key.data(), hive_t_REG_BINARY,
+                                           static_cast<size_t>(data.size()),
+                                           const_cast<char *>(data.constData())};
+                if (hivex_node_set_value(hive, element, &setValue, 0) == -1) {
+                    hivex_node_delete_child(hive, element);
+                    return false;
+                }
+                return true;
+            };
+
+            const hive_node_h optionsDescription =
+                hivex_node_add_child(hive, createdRamdiskOptions, "Description");
+            const hive_node_h optionsElements =
+                hivex_node_add_child(hive, createdRamdiskOptions, "Elements");
+            if (!optionsDescription || !optionsElements) {
+                hivex_node_delete_child(hive, createdRamdiskOptions);
+                createdRamdiskOptions = 0;
+                QMessageBox::critical(
+                    this, QStringLiteral("Ramdisk options failed"),
+                    QStringLiteral(
+                        "Could not initialize the WIM/Ramdisk options object."));
+                return;
+            }
+
+            QByteArray typeData(4, '\0');
+            typeData[0] = static_cast<char>(0x00);
+            typeData[1] = static_cast<char>(0x00);
+            typeData[2] = static_cast<char>(0x00);
+            typeData[3] = static_cast<char>(0x30);
+            QByteArray typeKey = QByteArrayLiteral("Type");
+            hive_set_value typeValue = {typeKey.data(), hive_t_REG_DWORD,
+                                        static_cast<size_t>(typeData.size()),
+                                        typeData.data()};
+            if (hivex_node_set_value(hive, optionsDescription, &typeValue, 0) ==
+                    -1 ||
+                !addOptionsString(optionsElements, QStringLiteral("12000004"),
+                                  QStringLiteral("Ramdisk Options")) ||
+                !addOptionsString(optionsElements, QStringLiteral("32000004"),
+                                  selectedSdiPath) ||
+                !addOptionsBinary(optionsElements, QStringLiteral("31000003"),
+                                  buildBcdRamdiskSdiDeviceDescriptor())) {
+                hivex_node_delete_child(hive, createdRamdiskOptions);
+                createdRamdiskOptions = 0;
+                QMessageBox::critical(
+                    this, QStringLiteral("Ramdisk options failed"),
+                    QStringLiteral(
+                        "Could not write the WIM/Ramdisk options elements."));
+                return;
+            }
+        }
     } else if (isInheritElement || isRecoverySequenceElement) {
         char *rawData = hivex_value_value(hive, value, &type, &length);
-        const QByteArray bytes = rawData ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
+        const QByteArray bytes =
+            rawData ? QByteArray(rawData, static_cast<int>(length))
+                    : QByteArray();
         free(rawData);
 
         QString currentReference;
@@ -2689,8 +2950,8 @@ void MainWindow::editSelectedValue() {
         QStringList choices;
         QHash<QString, QString> referenceByChoice;
         const QString targetGroup = isInheritElement
-            ? QStringLiteral("Inheritable objects")
-            : QStringLiteral("Application objects");
+                                        ? QStringLiteral("Inheritable objects")
+                                        : QStringLiteral("Application objects");
         QTreeWidgetItem *group = nullptr;
         for (int index = 0; index < bootTree->topLevelItemCount(); ++index) {
             QTreeWidgetItem *candidate = bootTree->topLevelItem(index);
@@ -2703,13 +2964,14 @@ void MainWindow::editSelectedValue() {
             for (int index = 0; index < group->childCount(); ++index) {
                 QTreeWidgetItem *objectItem = group->child(index);
                 if (isRecoverySequenceElement &&
-                    !objectItem->text(0).contains(QStringLiteral("recovery"), Qt::CaseInsensitive))
+                    !objectItem->text(0).contains(QStringLiteral("recovery"),
+                                                  Qt::CaseInsensitive))
                     continue;
                 const QString guid = objectItem->data(0, Qt::UserRole + 1).toString();
                 if (guid.isEmpty())
                     continue;
-                const QString choice = QStringLiteral("%1  %2")
-                    .arg(objectItem->text(0), guid);
+                const QString choice =
+                    QStringLiteral("%1  %2").arg(objectItem->text(0), guid);
                 choices.append(choice);
                 referenceByChoice.insert(choice, guid);
             }
@@ -2720,17 +2982,18 @@ void MainWindow::editSelectedValue() {
                 const QString guid = objectItem->data(0, Qt::UserRole + 1).toString();
                 if (guid.isEmpty())
                     continue;
-                const QString choice = QStringLiteral("%1  %2")
-                    .arg(objectItem->text(0), guid);
+                const QString choice =
+                    QStringLiteral("%1  %2").arg(objectItem->text(0), guid);
                 choices.append(choice);
                 referenceByChoice.insert(choice, guid);
             }
         }
         if (choices.isEmpty()) {
-            QMessageBox::warning(this, "No matching BCD objects",
-                                 isInheritElement
-                                     ? "This store has no inheritable objects to choose from."
-                                     : "This store has no recovery entries to choose from.");
+            QMessageBox::warning(
+                this, "No matching BCD objects",
+                isInheritElement
+                    ? "This store has no inheritable objects to choose from."
+                    : "This store has no recovery entries to choose from.");
             return;
         }
         choices.sort(Qt::CaseInsensitive);
@@ -2743,7 +3006,9 @@ void MainWindow::editSelectedValue() {
         }
 
         const QString selected = QInputDialog::getItem(
-            this, isInheritElement ? "Choose inherited settings" : "Choose recovery entry",
+            this,
+            isInheritElement ? "Choose inherited settings"
+                             : "Choose recovery entry",
             isInheritElement ? "Inheritable object:" : "Recovery sequence:",
             choices, currentIndex, false, &accepted);
         if (!accepted)
@@ -2757,28 +3022,37 @@ void MainWindow::editSelectedValue() {
         }
         newData.append('\0');
         newData.append('\0');
-    } else if (isBootMenuPolicyElement || isNxPolicyElement || isHypervisorLaunchElement) {
+    } else if (isBootMenuPolicyElement || isNxPolicyElement ||
+               isHypervisorLaunchElement) {
         if (type != hive_t_REG_BINARY || length < sizeof(quint32)) {
-            QMessageBox::warning(this, "Unsupported policy value",
-                                 "This BCD policy is not stored as a supported binary value.");
+            QMessageBox::warning(
+                this, "Unsupported policy value",
+                "This BCD policy is not stored as a supported binary value.");
             return;
         }
 
         char *rawData = hivex_value_value(hive, value, &type, &length);
-        newData = rawData ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
+        newData = rawData ? QByteArray(rawData, static_cast<int>(length))
+                          : QByteArray();
         free(rawData);
         if (newData.size() < static_cast<int>(sizeof(quint32))) {
-            QMessageBox::warning(this, "Invalid policy value", "The BCD policy value is empty.");
+            QMessageBox::warning(this, "Invalid policy value",
+                                 "The BCD policy value is empty.");
             return;
         }
 
-        const quint32 currentValue = static_cast<quint32>(static_cast<unsigned char>(newData.at(0))) |
-            (static_cast<quint32>(static_cast<unsigned char>(newData.at(1))) << 8) |
-            (static_cast<quint32>(static_cast<unsigned char>(newData.at(2))) << 16) |
-            (static_cast<quint32>(static_cast<unsigned char>(newData.at(3))) << 24);
+        const quint32 currentValue =
+            static_cast<quint32>(static_cast<unsigned char>(newData.at(0))) |
+            (static_cast<quint32>(static_cast<unsigned char>(newData.at(1)))
+             << 8) |
+            (static_cast<quint32>(static_cast<unsigned char>(newData.at(2)))
+             << 16) |
+            (static_cast<quint32>(static_cast<unsigned char>(newData.at(3)))
+             << 24);
         QStringList options;
         QHash<QString, quint32> valueByOption;
-        const auto addOption = [&options, &valueByOption](const QString &label, quint32 optionValue) {
+        const auto addOption = [&options, &valueByOption](const QString &label,
+                                                          quint32 optionValue) {
             options.append(label);
             valueByOption.insert(label, optionValue);
         };
@@ -2804,8 +3078,8 @@ void MainWindow::editSelectedValue() {
         }
         const QString selected = QInputDialog::getItem(
             this, QStringLiteral("Edit %1").arg(selectedItem->text()),
-            QStringLiteral("%1:").arg(selectedItem->text()),
-            options, currentIndex, false, &accepted);
+            QStringLiteral("%1:").arg(selectedItem->text()), options,
+            currentIndex, false, &accepted);
         if (!accepted)
             return;
 
@@ -2816,54 +3090,67 @@ void MainWindow::editSelectedValue() {
         newData[3] = static_cast<char>((selectedValue >> 24) & 0xff);
     } else if (isDisplayMessageOverrideElement) {
         if (type != hive_t_REG_BINARY || length < sizeof(quint32)) {
-            QMessageBox::warning(this, "Unsupported display message value",
-                                 "This setting is not stored as a supported binary value.");
+            QMessageBox::warning(
+                this, "Unsupported display message value",
+                "This setting is not stored as a supported binary value.");
             return;
         }
         char *rawData = hivex_value_value(hive, value, &type, &length);
-        newData = rawData ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
+        newData = rawData ? QByteArray(rawData, static_cast<int>(length))
+                          : QByteArray();
         free(rawData);
-        const quint32 currentValue = static_cast<quint32>(static_cast<unsigned char>(newData.at(0))) |
-            (static_cast<quint32>(static_cast<unsigned char>(newData.at(1))) << 8) |
-            (static_cast<quint32>(static_cast<unsigned char>(newData.at(2))) << 16) |
-            (static_cast<quint32>(static_cast<unsigned char>(newData.at(3))) << 24);
+        const quint32 currentValue =
+            static_cast<quint32>(static_cast<unsigned char>(newData.at(0))) |
+            (static_cast<quint32>(static_cast<unsigned char>(newData.at(1)))
+             << 8) |
+            (static_cast<quint32>(static_cast<unsigned char>(newData.at(2)))
+             << 16) |
+            (static_cast<quint32>(static_cast<unsigned char>(newData.at(3)))
+             << 24);
         const QStringList options = {
-            QStringLiteral("None"),
-            QStringLiteral("Recovery"),
+            QStringLiteral("None"), QStringLiteral("Recovery"),
             QStringLiteral("Startup Repair"),
-            QStringLiteral("Recovery and Startup Repair")
-        };
-        const int currentIndex = currentValue < static_cast<quint32>(options.size())
-            ? static_cast<int>(currentValue) : 0;
+            QStringLiteral("Recovery and Startup Repair")};
+        const int currentIndex =
+            currentValue < static_cast<quint32>(options.size())
+                ? static_cast<int>(currentValue)
+                : 0;
         const QString selected = QInputDialog::getItem(
             this, QStringLiteral("Edit %1").arg(selectedItem->text()),
-            QStringLiteral("%1:").arg(selectedItem->text()),
-            options, currentIndex, false, &accepted);
+            QStringLiteral("%1:").arg(selectedItem->text()), options,
+            currentIndex, false, &accepted);
         if (!accepted)
             return;
-        const quint32 selectedValue = static_cast<quint32>(options.indexOf(selected));
+        const quint32 selectedValue =
+            static_cast<quint32>(options.indexOf(selected));
         newData[0] = static_cast<char>(selectedValue & 0xff);
         newData[1] = static_cast<char>((selectedValue >> 8) & 0xff);
         newData[2] = static_cast<char>((selectedValue >> 16) & 0xff);
         newData[3] = static_cast<char>((selectedValue >> 24) & 0xff);
     } else if (isAllowedInMemoryElement) {
         if (type != hive_t_REG_BINARY || length < sizeof(quint32)) {
-            QMessageBox::warning(this, "Unsupported numeric value",
-                                 "This setting is not stored as a supported binary number.");
+            QMessageBox::warning(
+                this, "Unsupported numeric value",
+                "This setting is not stored as a supported binary number.");
             return;
         }
         char *rawData = hivex_value_value(hive, value, &type, &length);
-        newData = rawData ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
+        newData = rawData ? QByteArray(rawData, static_cast<int>(length))
+                          : QByteArray();
         free(rawData);
         quint64 currentValue = 0;
-        const int valueBytes = qMin(newData.size(), static_cast<int>(sizeof(quint64)));
+        const int valueBytes =
+            qMin(newData.size(), static_cast<int>(sizeof(quint64)));
         for (int index = 0; index < valueBytes; ++index)
-            currentValue |= static_cast<quint64>(static_cast<unsigned char>(newData.at(index))) << (index * 8);
+            currentValue |=
+                static_cast<quint64>(static_cast<unsigned char>(newData.at(index)))
+                << (index * 8);
         bool numberAccepted = false;
         const int selectedValue = QInputDialog::getInt(
             this, QStringLiteral("Edit %1").arg(selectedItem->text()),
-            QStringLiteral("Decimal value:"), static_cast<int>(qMin(currentValue, quint64(INT_MAX))),
-            0, INT_MAX, 1, &numberAccepted);
+            QStringLiteral("Decimal value:"),
+            static_cast<int>(qMin(currentValue, quint64(INT_MAX))), 0, INT_MAX, 1,
+            &numberAccepted);
         if (!numberAccepted)
             return;
         const quint64 replacement = static_cast<quint64>(selectedValue);
@@ -2871,49 +3158,67 @@ void MainWindow::editSelectedValue() {
             newData[index] = static_cast<char>((replacement >> (index * 8)) & 0xff);
     } else if (isIntegerElement) {
         if (length == 0 || length > sizeof(quint64)) {
-            QMessageBox::warning(this, "Unsupported integer value",
-                                 "This BCD integer does not fit in a supported numeric editor.");
+            QMessageBox::warning(
+                this, "Unsupported integer value",
+                "This BCD integer does not fit in a supported numeric editor.");
             return;
         }
         char *rawData = hivex_value_value(hive, value, &type, &length);
-        newData = rawData ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
+        newData = rawData ? QByteArray(rawData, static_cast<int>(length))
+                          : QByteArray();
         free(rawData);
         quint64 currentValue = 0;
         for (int index = 0; index < newData.size(); ++index)
-            currentValue |= static_cast<quint64>(static_cast<unsigned char>(newData.at(index)))
+            currentValue |=
+                static_cast<quint64>(static_cast<unsigned char>(newData.at(index)))
                 << (index * 8);
         const QString entered = QInputDialog::getText(
             this, QStringLiteral("Edit %1").arg(selectedItem->text()),
-            "Decimal value:", QLineEdit::Normal, QString::number(currentValue), &accepted);
+            "Decimal value:", QLineEdit::Normal, QString::number(currentValue),
+            &accepted);
         if (!accepted)
             return;
         bool validNumber = false;
-        const quint64 selectedValue = entered.trimmed().toULongLong(&validNumber, 10);
-        const quint64 maximumValue = newData.size() == static_cast<int>(sizeof(quint64))
-            ? std::numeric_limits<quint64>::max()
-            : (quint64(1) << (newData.size() * 8)) - 1;
+        const quint64 selectedValue =
+            entered.trimmed().toULongLong(&validNumber, 10);
+        const quint64 maximumValue =
+            newData.size() == static_cast<int>(sizeof(quint64))
+                ? std::numeric_limits<quint64>::max()
+                : (quint64(1) << (newData.size() * 8)) - 1;
         if (!validNumber || selectedValue > maximumValue) {
-            QMessageBox::warning(this, "Invalid integer",
-                                 "Enter a non-negative decimal value that fits this BCD field.");
+            QMessageBox::warning(
+                this, "Invalid integer",
+                "Enter a non-negative decimal value that fits this BCD field.");
             return;
         }
         for (int index = 0; index < newData.size(); ++index)
-            newData[index] = static_cast<char>((selectedValue >> (index * 8)) & 0xff);
+            newData[index] =
+                static_cast<char>((selectedValue >> (index * 8)) & 0xff);
     } else if (isIntegerListElement) {
         char *rawData = hivex_value_value(hive, value, &type, &length);
-        newData = rawData ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
+        newData = rawData ? QByteArray(rawData, static_cast<int>(length))
+                          : QByteArray();
         free(rawData);
         if (newData.size() % static_cast<int>(sizeof(quint32)) != 0) {
             QMessageBox::warning(this, "Unsupported integer list",
-                                 "This BCD integer list has an unsupported stored format and was left unchanged.");
+                                 "This BCD integer list has an unsupported stored "
+                                 "format and was left unchanged.");
             return;
         }
         QStringList currentValues;
         for (int offset = 0; offset < newData.size(); offset += 4) {
-            const quint32 number = static_cast<quint32>(static_cast<unsigned char>(newData.at(offset))) |
-                (static_cast<quint32>(static_cast<unsigned char>(newData.at(offset + 1))) << 8) |
-                (static_cast<quint32>(static_cast<unsigned char>(newData.at(offset + 2))) << 16) |
-                (static_cast<quint32>(static_cast<unsigned char>(newData.at(offset + 3))) << 24);
+            const quint32 number =
+                static_cast<quint32>(
+                    static_cast<unsigned char>(newData.at(offset))) |
+                (static_cast<quint32>(
+                     static_cast<unsigned char>(newData.at(offset + 1)))
+                 << 8) |
+                (static_cast<quint32>(
+                     static_cast<unsigned char>(newData.at(offset + 2)))
+                 << 16) |
+                (static_cast<quint32>(
+                     static_cast<unsigned char>(newData.at(offset + 3)))
+                 << 24);
             currentValues.append(QString::number(number));
         }
         const QString entered = QInputDialog::getText(
@@ -2923,25 +3228,30 @@ void MainWindow::editSelectedValue() {
         if (!accepted)
             return;
         newData.clear();
-        const QStringList values = entered.trimmed().isEmpty()
-            ? QStringList() : entered.split(QLatin1Char(','), Qt::SkipEmptyParts);
+        const QStringList values =
+            entered.trimmed().isEmpty()
+                ? QStringList()
+                : entered.split(QLatin1Char(','), Qt::SkipEmptyParts);
         for (const QString &valueText : values) {
             bool validNumber = false;
             const quint32 number = valueText.trimmed().toUInt(&validNumber, 10);
             if (!validNumber) {
-                QMessageBox::warning(this, "Invalid integer list",
-                                     "Enter comma-separated non-negative decimal integers.");
+                QMessageBox::warning(
+                    this, "Invalid integer list",
+                    "Enter comma-separated non-negative decimal integers.");
                 return;
             }
             for (int index = 0; index < 4; ++index)
                 newData.append(static_cast<char>((number >> (index * 8)) & 0xff));
         }
-    } else if (bcdValueType == 2 || type == hive_t_REG_SZ || type == hive_t_REG_EXPAND_SZ) {
+    } else if (bcdValueType == 2 || type == hive_t_REG_SZ ||
+               type == hive_t_REG_EXPAND_SZ) {
         QString originalText;
         if (type == hive_t_REG_BINARY) {
             char *rawData = hivex_value_value(hive, value, &type, &length);
-            const QByteArray bytes = rawData
-                ? QByteArray(rawData, static_cast<int>(length)) : QByteArray();
+            const QByteArray bytes =
+                rawData ? QByteArray(rawData, static_cast<int>(length))
+                        : QByteArray();
             free(rawData);
             for (int index = 0; index + 1 < bytes.size(); index += 2) {
                 const ushort codeUnit = static_cast<ushort>(
@@ -2958,9 +3268,13 @@ void MainWindow::editSelectedValue() {
         }
 
         const QString entered = QInputDialog::getText(
-            this, type == hive_t_REG_EXPAND_SZ ? "Edit expandable string"
-                                               : QStringLiteral("Edit %1").arg(selectedItem->text()),
-            type == hive_t_REG_EXPAND_SZ ? "Text (environment variables are preserved):" : "Text:",
+            this,
+            type == hive_t_REG_EXPAND_SZ
+                ? "Edit expandable string"
+                : QStringLiteral("Edit %1").arg(selectedItem->text()),
+            type == hive_t_REG_EXPAND_SZ
+                ? "Text (environment variables are preserved):"
+                : "Text:",
             QLineEdit::Normal, originalText, &accepted);
         if (!accepted)
             return;
@@ -2974,12 +3288,32 @@ void MainWindow::editSelectedValue() {
         newData.append('\0');
     } else {
         const QString windowsSetting = table->item(row, 1)
-            ? table->item(row, 1)->text() : QStringLiteral("BCD element");
+                                           ? table->item(row, 1)->text()
+                                           : QStringLiteral("BCD element");
         QMessageBox::information(
             this, "Friendly editor unavailable",
-            QStringLiteral("%1 (%2) does not have a friendly editor yet. Its stored data was left unchanged.")
+            QStringLiteral("%1 (%2) does not have a friendly editor yet. Its "
+                           "stored data was left unchanged.")
                 .arg(windowsSetting, elementId));
         return;
+    }
+
+    if (pairedDeviceNode) {
+        QByteArray pairedKey = QByteArrayLiteral("Element");
+        hive_set_value pairedReplacement = {
+            pairedKey.data(), hive_t_REG_BINARY,
+            static_cast<size_t>(pairedDeviceData.size()),
+            pairedDeviceData.data()
+        };
+        if (hivex_node_set_value(
+                hive, pairedDeviceNode, &pairedReplacement, 0) == -1) {
+            if (createdRamdiskOptions)
+                hivex_node_delete_child(hive, createdRamdiskOptions);
+            QMessageBox::critical(
+                this, QStringLiteral("Edit failed"),
+                QStringLiteral("Could not update the paired device element."));
+            return;
+        }
     }
 
     char *rawKey = hivex_value_key(hive, value);
@@ -2992,6 +3326,23 @@ void MainWindow::editSelectedValue() {
     const int result = hivex_node_set_value(hive, node, &replacement, 0);
     free(rawKey);
     if (result == -1) {
+        if (pairedDeviceNode) {
+            QByteArray pairedKey = QByteArrayLiteral("Element");
+            hive_set_value rollback = {
+                pairedKey.data(), pairedOriginalType,
+                static_cast<size_t>(pairedOriginalData.size()),
+                pairedOriginalData.data()
+            };
+            if (hivex_node_set_value(
+                    hive, pairedDeviceNode, &rollback, 0) == -1) {
+                QMessageBox::critical(
+                    this, QStringLiteral("Rollback failed"),
+                    QStringLiteral("The selected device could not be updated and its paired device could not be restored."));
+                return;
+            }
+        }
+        if (createdRamdiskOptions)
+            hivex_node_delete_child(hive, createdRamdiskOptions);
         QMessageBox::critical(this, "Edit failed", "libhivex could not update this value.");
         return;
     }

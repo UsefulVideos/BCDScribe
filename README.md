@@ -24,6 +24,8 @@ VHD/VHDX entry creation requires `qemu-nbd`, `sfdisk`, `findmnt`, and `lsblk`, p
 
 WIM/Ramdisk entry creation provides editable text fields for the WIM image, SDI file, Windows loader, and Windows directory paths. It writes the ramdisk device and options objects into the BCD store. The header shows the Qt style, detected desktop toolkit, and current light/dark color scheme; Qt's native platform style and palette remain in control.
 
+When editing a BCD device element, the device chooser has separate Partition, VHD/VHDX, and WIM/Ramdisk tabs. The Ramdisk tab accepts both the WIM image path and its `boot.sdi` path; VHD and Ramdisk selections update the paired application-device elements together.
+
 ## Install build dependencies
 
 On Debian/Ubuntu, Fedora/RHEL, Arch, and openSUSE, the bootstrap script installs native build packages and the AppImage packaging tools:
