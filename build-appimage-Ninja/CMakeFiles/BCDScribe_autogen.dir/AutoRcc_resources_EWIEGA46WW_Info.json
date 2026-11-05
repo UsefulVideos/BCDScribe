@@ -1,0 +1,26 @@
+{
+	"BUILD_DIR" : "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen",
+	"CMAKE_BINARY_DIR" : "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+	"CMAKE_CURRENT_BINARY_DIR" : "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+	"CMAKE_CURRENT_SOURCE_DIR" : "/media/Backup/C_Projects/BCDScribe",
+	"CMAKE_SOURCE_DIR" : "/media/Backup/C_Projects/BCDScribe",
+	"CROSS_CONFIG" : false,
+	"GENERATOR" : "Ninja",
+	"INCLUDE_DIR" : "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/include",
+	"INPUTS" : 
+	[
+		"/media/Backup/C_Projects/BCDScribe/packaging/minimal-hive.qcompress.b64",
+		"/media/Backup/C_Projects/BCDScribe/packaging/bcd-element-options.json"
+	],
+	"LOCK_FILE" : "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribe_autogen.dir/AutoRcc_resources_EWIEGA46WW_Lock.lock",
+	"MULTI_CONFIG" : false,
+	"OPTIONS" : [ "-name", "resources" ],
+	"OUTPUT_CHECKSUM" : "EWIEGA46WW",
+	"OUTPUT_NAME" : "qrc_resources.cpp",
+	"RCC_EXECUTABLE" : "/usr/lib/qt6/rcc",
+	"RCC_LIST_OPTIONS" : [ "--list" ],
+	"SETTINGS_FILE" : "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribe_autogen.dir/AutoRcc_resources_EWIEGA46WW_Used.txt",
+	"SOURCE" : "/media/Backup/C_Projects/BCDScribe/resources.qrc",
+	"USE_BETTER_GRAPH" : true,
+	"VERBOSITY" : 0
+}

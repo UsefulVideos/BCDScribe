@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

@@ -2,13 +2,32 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-appimage}"
+BUILD_DIR_OVERRIDE="${BUILD_DIR:-}"
+BUILD_DIR="${BUILD_DIR_OVERRIDE:-$ROOT_DIR/build-appimage}"
 OUTPUT="${OUTPUT:-$ROOT_DIR/dist/BCDScribe-x86_64.AppImage}"
 OUTPUT_TMP="${OUTPUT}.tmp.$$"
 LINUXDEPLOY_BIN="${LINUXDEPLOY_BIN:-linuxdeploy}"
 QT_PLUGIN_BIN="${QT_PLUGIN_BIN:-linuxdeploy-plugin-qt}"
 APPIMAGETOOL_BIN="${APPIMAGETOOL_BIN:-appimagetool}"
 QMAKE_BIN="${QMAKE:-}"
+
+BUILD_GENERATOR="${CMAKE_GENERATOR:-}"
+if [[ -z "$BUILD_GENERATOR" ]] && command -v ninja >/dev/null 2>&1; then
+    BUILD_GENERATOR="Ninja"
+fi
+GENERATOR_ARGS=()
+if [[ -n "$BUILD_GENERATOR" ]]; then
+    if [[ -f "$BUILD_DIR/CMakeCache.txt" ]] &&
+        ! grep -Fqx "CMAKE_GENERATOR:INTERNAL=$BUILD_GENERATOR" "$BUILD_DIR/CMakeCache.txt"; then
+        if [[ -n "$BUILD_DIR_OVERRIDE" ]]; then
+            printf 'Build directory uses a different CMake generator: %s\n' "$BUILD_DIR" >&2
+            exit 1
+        fi
+        GENERATOR_SUFFIX="${BUILD_GENERATOR//[^[:alnum:]]/}"
+        BUILD_DIR="${BUILD_DIR}-${GENERATOR_SUFFIX}"
+    fi
+    GENERATOR_ARGS=(-G "$BUILD_GENERATOR")
+fi
 
 resolve_executable() {
     local executable="$1"
@@ -58,6 +77,7 @@ ln -s "$QT_PLUGIN_PATH" "$TOOLS_DIR/linuxdeploy-plugin-qt"
 mkdir -p "$(dirname -- "$OUTPUT")"
 
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
+    "${GENERATOR_ARGS[@]}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build "$BUILD_DIR" --target BCDScribe --parallel

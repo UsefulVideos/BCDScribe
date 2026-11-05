@@ -1607,8 +1607,8 @@ void MainWindow::createBootEntry(const QString &templateId) {
         QDialog dialog(this);
         dialog.setWindowTitle(QStringLiteral("Configure Windows PE ramdisk"));
         auto *form = new QFormLayout(&dialog);
-        auto *wimPathEdit = new QLineEdit(QStringLiteral("\\sources\\boot.wim"), &dialog);
-        auto *sdiPathEdit = new QLineEdit(QStringLiteral("\\Boot\\boot.sdi"), &dialog);
+        auto *wimPathEdit = new QLineEdit(&dialog);
+        auto *sdiPathEdit = new QLineEdit(&dialog);
         auto *loaderPathEdit = new QLineEdit(entryTemplate.path, &dialog);
         auto *systemRootEdit = new QLineEdit(entryTemplate.systemRoot, &dialog);
         wimPathEdit->setPlaceholderText(QStringLiteral("\\sources\\boot.wim"));
@@ -1631,7 +1631,7 @@ void MainWindow::createBootEntry(const QString &templateId) {
         sdiPath = sdiPathEdit->text().trimmed();
         loaderPath = loaderPathEdit->text().trimmed();
         systemRoot = systemRootEdit->text().trimmed();
-        const QStringList windowsPaths = {sdiPath, loaderPath, systemRoot};
+        const QStringList windowsPaths = {loaderPath, systemRoot};
         const QString invalidCharacters = QStringLiteral("<>:\"|?*");
         const auto validPath = [&invalidCharacters](const QString &path) {
             if (!path.startsWith(QLatin1Char('\\')) ||
@@ -1645,6 +1645,7 @@ void MainWindow::createBootEntry(const QString &templateId) {
             return true;
         };
         if (!validPath(wimPath) ||
+            (!sdiPath.isEmpty() && !validPath(sdiPath)) ||
             std::any_of(windowsPaths.cbegin(), windowsPaths.cend(),
                         [&validPath](const QString &path) { return !validPath(path); })) {
             QMessageBox::warning(
@@ -1678,7 +1679,7 @@ void MainWindow::createBootEntry(const QString &templateId) {
     }
 
     hive_node_h ramdiskOptionsObject = 0;
-    if (!sdiPath.isEmpty()) {
+    if (!ramdiskDeviceDescriptor.isEmpty()) {
         const QByteArray optionsName = QStringLiteral("{%1}").arg(ramdiskOptionsGuid).toUtf8();
         ramdiskOptionsObject = hivex_node_add_child(
             hive, objects, optionsName.constData());
@@ -1827,9 +1828,10 @@ void MainWindow::createBootEntry(const QString &templateId) {
         if (!optionsDescriptionKey || !optionsElements || !optionsNameElement ||
             hivex_node_set_value(hive, optionsDescriptionKey, &optionsType, 0) == -1 ||
             hivex_node_set_value(hive, optionsNameElement, &optionsDescriptionValue, 0) == -1 ||
-            !addStringElement(optionsElements, QStringLiteral("32000004"), sdiPath) ||
-            !addBinaryElement(optionsElements, QStringLiteral("31000003"),
-                              buildBcdRamdiskSdiDeviceDescriptor()) ||
+            (!sdiPath.isEmpty() &&
+             (!addStringElement(optionsElements, QStringLiteral("32000004"), sdiPath) ||
+              !addBinaryElement(optionsElements, QStringLiteral("31000003"),
+                                buildBcdRamdiskSdiDeviceDescriptor()))) ||
             !addBinaryElement(elements, QStringLiteral("11000001"), ramdiskDeviceDescriptor) ||
             !addBinaryElement(elements, QStringLiteral("21000001"), ramdiskDeviceDescriptor) ||
             !addBinaryElement(elements, QStringLiteral("26000010"), QByteArray(1, '\1')) ||
@@ -2873,10 +2875,8 @@ void MainWindow::editSelectedValue() {
 
             auto *ramdiskPage = new QWidget(deviceTabs);
             auto *ramdiskLayout = new QFormLayout(ramdiskPage);
-            auto *wimPathEdit = new QLineEdit(
-                QStringLiteral("\\sources\\boot.wim"), ramdiskPage);
-            auto *sdiPathEdit = new QLineEdit(
-                QStringLiteral("\\Boot\\boot.sdi"), ramdiskPage);
+            auto *wimPathEdit = new QLineEdit(ramdiskPage);
+            auto *sdiPathEdit = new QLineEdit(ramdiskPage);
             wimPathEdit->setPlaceholderText(QStringLiteral("\\sources\\boot.wim"));
             sdiPathEdit->setPlaceholderText(QStringLiteral("\\Boot\\boot.sdi"));
             ramdiskLayout->addRow(QStringLiteral("WIM image path:"), wimPathEdit);
@@ -2946,15 +2946,18 @@ void MainWindow::editSelectedValue() {
                     } else {
                         selectedSdiPath = sdiPathEdit->text().trimmed();
                         const QString invalidCharacters = QStringLiteral("<>:\"|?*");
-                        bool validSdiPath =
-                            selectedSdiPath.startsWith(QLatin1Char('\\')) &&
-                            !selectedSdiPath.endsWith(QLatin1Char('\\')) &&
-                            !selectedSdiPath.contains(QLatin1Char('/'));
-                        for (const QChar character : selectedSdiPath) {
-                            if (character.unicode() < 0x20 ||
-                                invalidCharacters.contains(character)) {
-                                validSdiPath = false;
-                                break;
+                        bool validSdiPath = true;
+                        if (!selectedSdiPath.isEmpty()) {
+                            validSdiPath =
+                                selectedSdiPath.startsWith(QLatin1Char('\\')) &&
+                                !selectedSdiPath.endsWith(QLatin1Char('\\')) &&
+                                !selectedSdiPath.contains(QLatin1Char('/'));
+                            for (const QChar character : selectedSdiPath) {
+                                if (character.unicode() < 0x20 ||
+                                    invalidCharacters.contains(character)) {
+                                    validSdiPath = false;
+                                    break;
+                                }
                             }
                         }
                         if (!validSdiPath) {
@@ -3105,10 +3108,11 @@ void MainWindow::editSelectedValue() {
                     -1 ||
                 !addOptionsString(optionsElements, QStringLiteral("12000004"),
                                   QStringLiteral("Ramdisk Options")) ||
-                !addOptionsString(optionsElements, QStringLiteral("32000004"),
-                                  selectedSdiPath) ||
-                !addOptionsBinary(optionsElements, QStringLiteral("31000003"),
-                                  buildBcdRamdiskSdiDeviceDescriptor())) {
+                (!selectedSdiPath.isEmpty() &&
+                 (!addOptionsString(optionsElements, QStringLiteral("32000004"),
+                                    selectedSdiPath) ||
+                  !addOptionsBinary(optionsElements, QStringLiteral("31000003"),
+                                    buildBcdRamdiskSdiDeviceDescriptor())))) {
                 hivex_node_delete_child(hive, createdRamdiskOptions);
                 createdRamdiskOptions = 0;
                 QMessageBox::critical(
@@ -3631,6 +3635,8 @@ static QString bcd_element_name(const QString &id, quint32 objectType) {
     if (normalized == QStringLiteral("17000077")) return QStringLiteral("Allowed in-memory settings");
     if (normalized == QStringLiteral("21000001")) return QStringLiteral("Device");
     if (normalized == QStringLiteral("21000002")) return QStringLiteral("OS device");
+    if (normalized == QStringLiteral("21000026") && objectType == 0x10200004u)
+        return QStringLiteral("Resume file device");
     if (normalized == QStringLiteral("22000002")) {
         return objectType == 0x10200004u
             ? QStringLiteral("Resume file path")
@@ -3910,6 +3916,8 @@ static QString bcdedit_option_name(const QString &id, quint32 objectType) {
     if (normalized == QStringLiteral("16000009")) return QStringLiteral("recoveryenabled");
     if (normalized == QStringLiteral("17000077")) return QStringLiteral("allowedinmemorysettings");
     if (normalized == QStringLiteral("21000002")) return QStringLiteral("osdevice");
+    if (normalized == QStringLiteral("21000026") && objectType == 0x10200004u)
+        return QStringLiteral("filedevice");
     if (normalized == QStringLiteral("22000002")) {
         return objectType == 0x10200004u
             ? QStringLiteral("filepath")

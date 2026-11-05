@@ -1,0 +1,5 @@
+set(__QT_DEPLOY_TARGETS "BCDScribe;BCDScribeDeviceDescriptorTests")
+set(__QT_DEPLOY_TARGET_BCDScribe_FILE /media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe)
+set(__QT_DEPLOY_TARGET_BCDScribe_TYPE EXECUTABLE)
+set(__QT_DEPLOY_TARGET_BCDScribeDeviceDescriptorTests_FILE /media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribeDeviceDescriptorTests)
+set(__QT_DEPLOY_TARGET_BCDScribeDeviceDescriptorTests_TYPE EXECUTABLE)

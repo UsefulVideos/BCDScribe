@@ -1,0 +1,62 @@
+[
+{
+  "directory": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+  "command": "/usr/bin/c++ -DBCDSCRIBE_GITHUB_REPOSITORY=\\\"UsefulVideos/BCDScribe\\\" -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -I/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/include -isystem /usr/include/qt6/QtCore -isystem /usr/include/qt6 -isystem /usr/lib/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtWidgets -O3 -DNDEBUG -std=gnu++17 -mno-direct-extern-access -o CMakeFiles/BCDScribe.dir/BCDScribe_autogen/mocs_compilation.cpp.o -c /media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/mocs_compilation.cpp",
+  "file": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/mocs_compilation.cpp",
+  "output": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribe.dir/BCDScribe_autogen/mocs_compilation.cpp.o"
+},
+{
+  "directory": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+  "command": "/usr/bin/c++ -DBCDSCRIBE_GITHUB_REPOSITORY=\\\"UsefulVideos/BCDScribe\\\" -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -I/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/include -isystem /usr/include/qt6/QtCore -isystem /usr/include/qt6 -isystem /usr/lib/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtWidgets -O3 -DNDEBUG -std=gnu++17 -mno-direct-extern-access -o CMakeFiles/BCDScribe.dir/main.cpp.o -c /media/Backup/C_Projects/BCDScribe/main.cpp",
+  "file": "/media/Backup/C_Projects/BCDScribe/main.cpp",
+  "output": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribe.dir/main.cpp.o"
+},
+{
+  "directory": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+  "command": "/usr/bin/c++ -DBCDSCRIBE_GITHUB_REPOSITORY=\\\"UsefulVideos/BCDScribe\\\" -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -I/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/include -isystem /usr/include/qt6/QtCore -isystem /usr/include/qt6 -isystem /usr/lib/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtWidgets -O3 -DNDEBUG -std=gnu++17 -mno-direct-extern-access -o CMakeFiles/BCDScribe.dir/console.cpp.o -c /media/Backup/C_Projects/BCDScribe/console.cpp",
+  "file": "/media/Backup/C_Projects/BCDScribe/console.cpp",
+  "output": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribe.dir/console.cpp.o"
+},
+{
+  "directory": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+  "command": "/usr/bin/c++ -DBCDSCRIBE_GITHUB_REPOSITORY=\\\"UsefulVideos/BCDScribe\\\" -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -I/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/include -isystem /usr/include/qt6/QtCore -isystem /usr/include/qt6 -isystem /usr/lib/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtWidgets -O3 -DNDEBUG -std=gnu++17 -mno-direct-extern-access -o CMakeFiles/BCDScribe.dir/mainwindow.cpp.o -c /media/Backup/C_Projects/BCDScribe/mainwindow.cpp",
+  "file": "/media/Backup/C_Projects/BCDScribe/mainwindow.cpp",
+  "output": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribe.dir/mainwindow.cpp.o"
+},
+{
+  "directory": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+  "command": "/usr/bin/c++ -DBCDSCRIBE_GITHUB_REPOSITORY=\\\"UsefulVideos/BCDScribe\\\" -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -I/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/include -isystem /usr/include/qt6/QtCore -isystem /usr/include/qt6 -isystem /usr/lib/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtWidgets -O3 -DNDEBUG -std=gnu++17 -mno-direct-extern-access -o CMakeFiles/BCDScribe.dir/bcddevice.cpp.o -c /media/Backup/C_Projects/BCDScribe/bcddevice.cpp",
+  "file": "/media/Backup/C_Projects/BCDScribe/bcddevice.cpp",
+  "output": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribe.dir/bcddevice.cpp.o"
+},
+{
+  "directory": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+  "command": "/usr/bin/c++ -DBCDSCRIBE_GITHUB_REPOSITORY=\\\"UsefulVideos/BCDScribe\\\" -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -I/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/include -isystem /usr/include/qt6/QtCore -isystem /usr/include/qt6 -isystem /usr/lib/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtWidgets -O3 -DNDEBUG -std=gnu++17 -mno-direct-extern-access -o CMakeFiles/BCDScribe.dir/vhddevice.cpp.o -c /media/Backup/C_Projects/BCDScribe/vhddevice.cpp",
+  "file": "/media/Backup/C_Projects/BCDScribe/vhddevice.cpp",
+  "output": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribe.dir/vhddevice.cpp.o"
+},
+{
+  "directory": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+  "command": "/usr/bin/c++ -DBCDSCRIBE_GITHUB_REPOSITORY=\\\"UsefulVideos/BCDScribe\\\" -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -I/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/include -isystem /usr/include/qt6/QtCore -isystem /usr/include/qt6 -isystem /usr/lib/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtWidgets -O3 -DNDEBUG -std=gnu++17 -mno-direct-extern-access -o CMakeFiles/BCDScribe.dir/BCDScribe_autogen/EWIEGA46WW/qrc_resources.cpp.o -c /media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/EWIEGA46WW/qrc_resources.cpp",
+  "file": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/EWIEGA46WW/qrc_resources.cpp",
+  "output": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribe.dir/BCDScribe_autogen/EWIEGA46WW/qrc_resources.cpp.o"
+},
+{
+  "directory": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+  "command": "/usr/bin/c++ -DQT_CORE_LIB -DQT_NO_DEBUG -I/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribeDeviceDescriptorTests_autogen/include -I/media/Backup/C_Projects/BCDScribe -isystem /usr/include/qt6/QtCore -isystem /usr/include/qt6 -isystem /usr/lib/qt6/mkspecs/linux-g++ -O3 -DNDEBUG -std=gnu++17 -mno-direct-extern-access -o CMakeFiles/BCDScribeDeviceDescriptorTests.dir/BCDScribeDeviceDescriptorTests_autogen/mocs_compilation.cpp.o -c /media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribeDeviceDescriptorTests_autogen/mocs_compilation.cpp",
+  "file": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribeDeviceDescriptorTests_autogen/mocs_compilation.cpp",
+  "output": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribeDeviceDescriptorTests.dir/BCDScribeDeviceDescriptorTests_autogen/mocs_compilation.cpp.o"
+},
+{
+  "directory": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+  "command": "/usr/bin/c++ -DQT_CORE_LIB -DQT_NO_DEBUG -I/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribeDeviceDescriptorTests_autogen/include -I/media/Backup/C_Projects/BCDScribe -isystem /usr/include/qt6/QtCore -isystem /usr/include/qt6 -isystem /usr/lib/qt6/mkspecs/linux-g++ -O3 -DNDEBUG -std=gnu++17 -mno-direct-extern-access -o CMakeFiles/BCDScribeDeviceDescriptorTests.dir/bcddevice.cpp.o -c /media/Backup/C_Projects/BCDScribe/bcddevice.cpp",
+  "file": "/media/Backup/C_Projects/BCDScribe/bcddevice.cpp",
+  "output": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribeDeviceDescriptorTests.dir/bcddevice.cpp.o"
+},
+{
+  "directory": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja",
+  "command": "/usr/bin/c++ -DQT_CORE_LIB -DQT_NO_DEBUG -I/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribeDeviceDescriptorTests_autogen/include -I/media/Backup/C_Projects/BCDScribe -isystem /usr/include/qt6/QtCore -isystem /usr/include/qt6 -isystem /usr/lib/qt6/mkspecs/linux-g++ -O3 -DNDEBUG -std=gnu++17 -mno-direct-extern-access -o CMakeFiles/BCDScribeDeviceDescriptorTests.dir/tests/bcddevice_test.cpp.o -c /media/Backup/C_Projects/BCDScribe/tests/bcddevice_test.cpp",
+  "file": "/media/Backup/C_Projects/BCDScribe/tests/bcddevice_test.cpp",
+  "output": "/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/CMakeFiles/BCDScribeDeviceDescriptorTests.dir/tests/bcddevice_test.cpp.o"
+}
+]

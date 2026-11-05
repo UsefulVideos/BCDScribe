@@ -78,7 +78,9 @@ install(FILES packaging/BCDScribe.svg
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
    CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
     add_custom_target(build_appimage ALL
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/packaging/build-appimage.sh
+        COMMAND ${CMAKE_COMMAND} -E env
+            "CMAKE_GENERATOR=${CMAKE_GENERATOR}"
+            ${CMAKE_CURRENT_SOURCE_DIR}/packaging/build-appimage.sh
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/packaging
         VERBATIM
         COMMENT "Building BCDScribe AppImage"
