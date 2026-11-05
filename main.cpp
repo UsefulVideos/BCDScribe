@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QIcon>
+#include <QLibraryInfo>
 #include <QMessageBox>
 #include <QProcess>
 #include <QSettings>
@@ -74,6 +75,33 @@ bool isConsoleInvocation(const QStringList &arguments) {
         first == QStringLiteral("/badmemoryaccess");
 }
 
+bool shouldUseWaylandPortal() {
+    const QString platform = qEnvironmentVariable("QT_QPA_PLATFORM").trimmed().toLower();
+    if (!platform.isEmpty())
+        return platform.startsWith(QStringLiteral("wayland"));
+    return !qEnvironmentVariable("WAYLAND_DISPLAY").trimmed().isEmpty();
+}
+
+bool portalThemePluginAvailable() {
+    QStringList pluginPaths = QCoreApplication::libraryPaths();
+    pluginPaths.append(QLibraryInfo::path(QLibraryInfo::PluginsPath));
+    const QString configuredPaths = qEnvironmentVariable("QT_PLUGIN_PATH").trimmed();
+    if (!configuredPaths.isEmpty())
+        pluginPaths.append(configuredPaths.split(QDir::listSeparator(), Qt::SkipEmptyParts));
+
+    for (const QString &pluginPath : pluginPaths) {
+        if (QFileInfo::exists(QDir(pluginPath).filePath(
+                QStringLiteral("platformthemes/libqxdgdesktopportal.so"))))
+            return true;
+    }
+    return false;
+}
+
+void configureWaylandPortalTheme() {
+    if (shouldUseWaylandPortal() && portalThemePluginAvailable())
+        qputenv("QT_QPA_PLATFORMTHEME", QByteArrayLiteral("xdgdesktopportal"));
+}
+
 }
 
 int main(int argc, char *argv[]) {
@@ -82,6 +110,8 @@ int main(int argc, char *argv[]) {
         originalArguments.append(QString::fromLocal8Bit(argv[index]));
     if (isConsoleInvocation(originalArguments))
         return runConsoleCommand(argc, argv);
+
+    configureWaylandPortalTheme();
 
     const QString configDirectory = userConfigDirectory();
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, configDirectory);
