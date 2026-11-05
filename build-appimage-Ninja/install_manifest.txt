@@ -1,3 +1,3 @@
-/tmp/tmp.2tD8iJ7AUJ/usr/bin/BCDScribe
-/tmp/tmp.2tD8iJ7AUJ/usr/share/applications/BCDScribe.desktop
-/tmp/tmp.2tD8iJ7AUJ/usr/share/icons/hicolor/scalable/apps/BCDScribe.svg
+/tmp/tmp.8V72vYNa7A/usr/bin/BCDScribe
+/tmp/tmp.8V72vYNa7A/usr/share/applications/BCDScribe.desktop
+/tmp/tmp.8V72vYNa7A/usr/share/icons/hicolor/scalable/apps/BCDScribe.svg

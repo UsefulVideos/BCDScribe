@@ -96,10 +96,17 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        QStringList arguments = {
-            QStandardPaths::findExecutable(QStringLiteral("env")),
-            QStringLiteral("BCDSCRIBE_ELEVATED=1")
-        };
+        const QString env = QStandardPaths::findExecutable(QStringLiteral("env"));
+        const QString sessionBusAddress =
+            qEnvironmentVariable("DBUS_SESSION_BUS_ADDRESS").trimmed();
+        QStringList arguments;
+        if (sessionBusAddress.isEmpty()) {
+            const QString dbusRunSession = QStandardPaths::findExecutable(
+                QStringLiteral("dbus-run-session"));
+            if (!dbusRunSession.isEmpty())
+                arguments << dbusRunSession << QStringLiteral("--");
+        }
+        arguments << env << QStringLiteral("BCDSCRIBE_ELEVATED=1");
         arguments.append(QStringLiteral("BCDSCRIBE_USER_CONFIG_HOME=%1")
                              .arg(configDirectory));
         const QStringList displayVariables = {
@@ -121,6 +128,9 @@ int main(int argc, char *argv[]) {
             QStringLiteral("QT_QPA_PLATFORM")
         };
         for (const QString &variable : displayVariables) {
+            if (variable == QStringLiteral("DBUS_SESSION_BUS_ADDRESS") &&
+                sessionBusAddress.isEmpty())
+                continue;
             if (qEnvironmentVariableIsSet(variable.toLocal8Bit().constData()))
                 arguments.append(variable + QLatin1Char('=') +
                                  qEnvironmentVariable(variable.toLocal8Bit().constData()));
