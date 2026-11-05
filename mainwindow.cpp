@@ -110,6 +110,127 @@ static bool preserveUserConfigOwnership(const QString &settingsFile) {
     return true;
 }
 
+static QString desktopUserHome() {
+    QString userHome = QDir::homePath();
+#ifdef Q_OS_LINUX
+    bool uidValid = false;
+    uint uid = qEnvironmentVariable("PKEXEC_UID").toUInt(&uidValid);
+    if (!uidValid)
+        uid = qEnvironmentVariable("SUDO_UID").toUInt(&uidValid);
+    const passwd *user = uidValid ? getpwuid(static_cast<uid_t>(uid)) : nullptr;
+    if (user && user->pw_dir)
+        userHome = QString::fromLocal8Bit(user->pw_dir);
+#endif
+    return userHome;
+}
+
+static QString desktopConfigHome() {
+    QString configHome = qEnvironmentVariable("BCDSCRIBE_USER_CONFIG_HOME").trimmed();
+    if (configHome.isEmpty())
+        configHome = qEnvironmentVariable("XDG_CONFIG_HOME").trimmed();
+    return configHome.isEmpty()
+        ? QDir(desktopUserHome()).filePath(QStringLiteral(".config"))
+        : configHome;
+}
+
+static QColor gtkColorValue(const QString &value) {
+    const QString normalized = value.trimmed();
+    QColor color(normalized);
+    if (color.isValid())
+        return color;
+
+    static const QRegularExpression rgbExpression(
+        QStringLiteral("rgba?\\(\\s*(\\d{1,3})\\s*,\\s*(\\d{1,3})\\s*,\\s*(\\d{1,3})"));
+    const QRegularExpressionMatch match = rgbExpression.match(normalized);
+    if (!match.hasMatch())
+        return {};
+    const int red = match.captured(1).toInt();
+    const int green = match.captured(2).toInt();
+    const int blue = match.captured(3).toInt();
+    if (red > 255 || green > 255 || blue > 255)
+        return {};
+    return QColor(red, green, blue);
+}
+
+static QColor gtkAccentFromFile(const QString &filePath) {
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    const QString contents = QString::fromUtf8(file.readAll());
+    for (const QString &name : {QStringLiteral("accent_bg_color"),
+                                QStringLiteral("accent_color"),
+                                QStringLiteral("theme_selected_bg_color"),
+                                QStringLiteral("selected_bg_color")}) {
+        const QRegularExpression expression(
+            QStringLiteral("(?:@define-color\\s+%1\\s+|%1\\s*:\\s*)"
+                           "(#[0-9A-Fa-f]{3,8}|rgba?\\([^)]*\\))")
+                .arg(QRegularExpression::escape(name)));
+        const QRegularExpressionMatch match = expression.match(contents);
+        if (match.hasMatch()) {
+            const QColor color = gtkColorValue(match.captured(1));
+            if (color.isValid())
+                return color;
+        }
+    }
+    return {};
+}
+
+static QColor desktopAccentColor(const QPalette &qtPalette) {
+    const QString configHome = desktopConfigHome();
+    QString themeName = qEnvironmentVariable("GTK_THEME").section(QLatin1Char(':'), 0, 0).trimmed();
+    if (themeName.isEmpty()) {
+        for (const QString &version : {QStringLiteral("gtk-4.0"), QStringLiteral("gtk-3.0")}) {
+            QSettings settings(QDir(configHome).filePath(version + QStringLiteral("/settings.ini")),
+                               QSettings::IniFormat);
+            themeName = settings.value(QStringLiteral("Settings/gtk-theme-name")).toString().trimmed();
+            if (!themeName.isEmpty())
+                break;
+        }
+    }
+
+    const QString userHome = desktopUserHome();
+    const QString dataHome = qEnvironmentVariable("XDG_DATA_HOME").trimmed().isEmpty()
+        ? QDir(userHome).filePath(QStringLiteral(".local/share"))
+        : qEnvironmentVariable("XDG_DATA_HOME").trimmed();
+    const QStringList themeRoots = {
+        QDir(userHome).filePath(QStringLiteral(".themes")),
+        QDir(dataHome).filePath(QStringLiteral("themes")),
+        QStringLiteral("/usr/local/share/themes"),
+        QStringLiteral("/usr/share/themes")
+    };
+
+    QStringList gtkFiles;
+    for (const QString &version : {QStringLiteral("gtk-4.0"), QStringLiteral("gtk-3.0")}) {
+        gtkFiles.append(QDir(configHome).filePath(version + QStringLiteral("/gtk.css")));
+        if (!themeName.isEmpty()) {
+            for (const QString &root : themeRoots)
+                gtkFiles.append(QDir(root).filePath(themeName + QLatin1Char('/') + version + QStringLiteral("/gtk.css")));
+        }
+    }
+
+    const QString gtk2RcFiles = qEnvironmentVariable("GTK2_RC_FILES").trimmed();
+    if (!gtk2RcFiles.isEmpty())
+        gtkFiles.append(gtk2RcFiles.split(QLatin1Char(':'), Qt::SkipEmptyParts));
+    gtkFiles.append(QDir(configHome).filePath(QStringLiteral("gtk-2.0/gtkrc")));
+    gtkFiles.append(QDir(userHome).filePath(QStringLiteral(".gtkrc-2.0")));
+    if (!themeName.isEmpty()) {
+        for (const QString &root : themeRoots)
+            gtkFiles.append(QDir(root).filePath(themeName + QStringLiteral("/gtk-2.0/gtkrc")));
+    }
+    for (const QString &filePath : gtkFiles) {
+        const QColor color = gtkAccentFromFile(filePath);
+        if (color.isValid())
+            return color;
+    }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+    const QColor accent = qtPalette.color(QPalette::Accent);
+    if (accent.isValid())
+        return accent;
+#endif
+    return qtPalette.color(QPalette::Highlight);
+}
+
 struct HotkeySpec {
     const char *id;
     const char *label;
@@ -574,10 +695,8 @@ bool MainWindow::applyTheme(bool saveSettings) {
     }
 
     const QString colorScheme = themeColorCombo->currentData().toString();
-    if (colorScheme == QStringLiteral("system")) {
-        QApplication::setPalette(systemPalette);
-    } else {
-        QPalette palette = systemPalette;
+    QPalette palette = systemPalette;
+    if (colorScheme != QStringLiteral("system")) {
         if (colorScheme == QStringLiteral("dark")) {
             palette.setColor(QPalette::Window, QColor(35, 38, 41));
             palette.setColor(QPalette::WindowText, QColor(239, 240, 241));
@@ -589,8 +708,6 @@ bool MainWindow::applyTheme(bool saveSettings) {
             palette.setColor(QPalette::Button, QColor(49, 54, 59));
             palette.setColor(QPalette::ButtonText, QColor(239, 240, 241));
             palette.setColor(QPalette::BrightText, QColor(255, 0, 0));
-            palette.setColor(QPalette::Highlight, QColor(61, 174, 233));
-            palette.setColor(QPalette::HighlightedText, QColor(0, 0, 0));
         } else {
             palette.setColor(QPalette::Window, QColor(239, 240, 241));
             palette.setColor(QPalette::WindowText, QColor(35, 38, 41));
@@ -602,11 +719,16 @@ bool MainWindow::applyTheme(bool saveSettings) {
             palette.setColor(QPalette::Button, QColor(239, 240, 241));
             palette.setColor(QPalette::ButtonText, QColor(35, 38, 41));
             palette.setColor(QPalette::BrightText, QColor(255, 0, 0));
-            palette.setColor(QPalette::Highlight, QColor(61, 174, 233));
-            palette.setColor(QPalette::HighlightedText, QColor(255, 255, 255));
         }
-        QApplication::setPalette(palette);
     }
+    const QColor accent = desktopAccentColor(systemPalette);
+    palette.setColor(QPalette::Highlight, accent);
+    palette.setColor(QPalette::HighlightedText,
+                     accent.lightness() < 140 ? QColor(Qt::white) : QColor(Qt::black));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+    palette.setColor(QPalette::Accent, accent);
+#endif
+    QApplication::setPalette(palette);
 
     if (saveSettings) {
         QSettings settings(QStringLiteral("BCDScribe"), QStringLiteral("BCDScribe"));

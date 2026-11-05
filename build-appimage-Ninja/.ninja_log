@@ -13,3 +13,9 @@
 1769	30609	1793895351285833396	CMakeFiles/BCDScribe.dir/vhddevice.cpp.o	9cdaf22923f2ac23
 1765	67749	1793895351280833296	CMakeFiles/BCDScribe.dir/mainwindow.cpp.o	e58d5d1150c5a61a
 67749	68252	1793895417265863916	BCDScribe	4edee626f5d539c9
+5	70	1793897043440885264	BCDScribe_autogen/timestamp	9aeab3ba71d788ce
+5	70	1793897043440885264	BCDScribe_autogen/mocs_compilation.cpp	9aeab3ba71d788ce
+5	70	1793897043440885264	/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/timestamp	9aeab3ba71d788ce
+5	70	1793897043440885264	/media/Backup/C_Projects/BCDScribe/build-appimage-Ninja/BCDScribe_autogen/mocs_compilation.cpp	9aeab3ba71d788ce
+70	56043	1793897043506652906	CMakeFiles/BCDScribe.dir/mainwindow.cpp.o	e58d5d1150c5a61a
+56043	56674	1793897099478874139	BCDScribe	4edee626f5d539c9
